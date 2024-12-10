@@ -9,9 +9,9 @@ import {
     Point,
     BlurFilter,
     ColorMatrixFilter,
-    TilingSprite, Texture, Sprite,
+    TilingSprite, Texture, Sprite, AnimatedSprite,
 } from 'pixi.js'
-import {create_sprite, create_text, graphics} from '$lib/create_things'
+import {create_sprite, create_text, graphics, new_point} from '$lib/create_things'
 import {h_const, w_const} from '$lib/resize'
 import {random_float, random_int} from '$lib/random'
 import Loop from '$lib/Loop'
@@ -30,6 +30,9 @@ import {
     gradient_ball_marker,
 } from '$src/game/logica/gradients'
 import {Easing} from '@tweenjs/tween.js'
+import AssetManager from '$lib/AssetManager'
+import make_draggable from '$lib/make_draggable'
+import {detect_circle_intersection} from '$src/game/utility'
 
 const twp: any = new Pane()
 
@@ -71,8 +74,6 @@ const bumper_probabilities: any = {// max-level => [probs]
 }
 
 
-let bumper_selected: Bumper | undefined = undefined
-
 const bumper_values: any = {
     add: {
         1: 1,
@@ -106,10 +107,29 @@ const bumper_values: any = {
 
 let last_20: any[] = []
 
+let room!: any
 
 const particles_container = new Container()
 
 type EmitterConfigs = 'star' | 'dust' | 'trail' | 'flare'
+
+let pole!: Pole
+
+const fixers: Fixer[] = []
+const fixers_disable = () => {
+    for (const fixer of fixers) {
+        fixer.anim_end()
+    }
+}
+const fixers_enable = () => {
+    for (const fixer of fixers) {
+        fixer.anim_start()
+    }
+}
+let bumpers: Bumper[] = []
+
+const merge_cells: MergeCell[] = []
+let merge_panel!: MergePanel
 
 class Ball extends NodePhysics {
     color = graphics().circle(0, 0, 70).fill({color: '#ec9f9f', alpha: 1})
@@ -128,11 +148,12 @@ class Ball extends NodePhysics {
         label: 'ball',
         slop: 0.01,
     })
-    ball = false
+    counted = false
+    flicker = create_sprite('particle')
 
     update
 
-    constructor() {
+    constructor(bonus?: string) {
         super()
 
         this.marker = create_text({text: this.level, style: {fontSize: 80, fill: '#317a0b', fontFamily: 'bubblebody'}})
@@ -148,13 +169,45 @@ class Ball extends NodePhysics {
         this.emitter = new Emitter(particles_container, upgradeConfig(emitter_configs.trail, [Texture.from('particle')]))
         this.emitter.emit = false
         this.update = (() => {
-            if (particles_container.children.length > 1000) return
             this.emitter.spawnPos.copyFrom(this.position)
             this.emitter.update(0.01)
         })
 
         PhysicsEngine.add(this, this.shape)
         this.set_value()
+
+        if (bonus) {
+
+            this.marker.alpha = 0
+            this.counted = true
+            this.addChild(this.flicker)
+            this.flicker.scale.set(2)
+            this.tween(this.flicker)
+                .to({alpha: 0}, 155)
+                .easing(Easing.Sinusoidal.InOut)
+                .repeat(Infinity)
+                .yoyo(true)
+                .start()
+            this.bg.scale.set(2.5)
+
+            this.cursor = 'pointer'
+        }
+
+        if (bonus === 'super') {
+            const t = Texture.from('ball_super')
+            this.bg.texture = t
+            this.set_emitter('trail')
+        } else if (bonus === 'mega') {
+
+            const t = Texture.from('ball_mega')
+            this.bg.texture = t
+            this.set_emitter('dust')
+        } else if (bonus === 'bomb') {
+
+            const t = Texture.from('ball_bomb')
+            this.bg.texture = t
+            this.set_emitter('star')
+        }
     }
 
     upgrade(value: number, mode = 'add') {
@@ -173,7 +226,6 @@ class Ball extends NodePhysics {
         const y = find_x(this.level)
         const max = find_x(12000)
         const percent = calc_in_range(min, max, y)
-        console.log(percent)
         const g = get_gradient_color(percent, gradient_ball_bg)
         this.color.clear().circle(0, 0, 70).fill({color: g, alpha: 1})
         this.marker.style.fill = get_gradient_color(percent, gradient_ball_marker)
@@ -212,18 +264,99 @@ class Ball extends NodePhysics {
     }
 }
 
+class FixerLocker extends BaseNode {
+    box = new Container()
+    bg = new Container()
+    marker = create_text({text: '$1000', style: {fontSize: 30, stroke: {color: colors.sea1, width: 10}}})
+    lock = create_sprite('lock')
 
-class BumperPlace extends BaseNode {
+    bg_mask !: Graphics
+    private spin: AnimatedSprite
+    private blackWhite: ColorMatrixFilter
+    private unlocked: boolean = false
+
+    constructor() {
+        super()
+        for (let i = 0; i < 5; i++) {
+            const t = Sprite.from('tile_metal')
+            this.bg.addChild(t)
+            t.position.x = i * t.width
+            this.bg.pivot.x = t.width * 2.5
+            this.bg.pivot.y = t.height / 2
+        }
+        this.bh = 80
+        this.bw = 140
+        this.bg_mask = graphics()
+            .roundRect(-this.bw / 2, -this.bh / 2, this.bw, this.bh, 35)
+            .fill(0)
+
+        this.addChild(this.box)
+        this.box.addChild(this.bg)
+        this.box.addChild(this.bg_mask)
+        this.box.addChild(this.marker)
+        this.box.addChild(this.lock)
+        this.bg.mask = this.bg_mask
+        this.marker.position.y = 10
+        this.lock.scale.set(0.2)
+        this.lock.position.y = -30
+
+        this.blackWhite = new ColorMatrixFilter()
+        this.blackWhite.blackAndWhite(false)
+        this.box.filters = [this.blackWhite]
+
+        this.spin = new AnimatedSprite(AssetManager.get('spin'))
+        // this.spin.play()
+        this.spin.animationSpeed = 0.6
+        this.spin.anchor.set(0.5)
+        this.spin.scale.set(4)
+        this.addChild(this.spin)
+        this.spin.visible = false
+        this.spin.loop = false
+        this.spin.onComplete = () => {
+            this.spin.visible = false
+            this.spin.gotoAndStop(0)
+        }
+
+    }
+
+    anim_unlock() {
+        this.spin.visible = true
+        this.spin.play()
+        this.set_timeout(100, () => {
+            this.box.filters = []
+        })
+        this.unlocked = true
+    }
+
+    anim_lock() {
+
+        this.spin.visible = true
+        this.spin.play()
+        this.set_timeout(100, () => {
+            this.box.filters = [this.blackWhite]
+        })
+        this.unlocked = false
+    }
+}
+
+
+class Fixer extends BaseNode {
     bg = create_sprite('fixer')
     spot = graphics().circle(0, 0, 40).fill('white')
+    locker = new FixerLocker()
     id: number
     emitter: Emitter
     update: () => void
+    private anim: any
+    anim_times = 0
+    owned = false
 
     constructor(id: number) {
         super()
         this.addChild(this.bg)
         this.addChild(this.spot)
+        this.addChild(this.locker)
+        this.bg.alpha = 0.5
         this.spot.alpha = 0
         this.id = id
 
@@ -234,27 +367,58 @@ class BumperPlace extends BaseNode {
         this.emitter.emit = false
 
         this.update = (() => {
-            if (particles_container.children.length > 1000) return
             this.emitter.spawnPos.copyFrom(this.position)
             this.emitter.update(0.01)
         })
 
         window.app.ticker.add(this.update)
 
-        this.on('pointerdown', () => {
-            this.trigger('place_bumper', this)
-        })
+        // this.on('pointerdown', () => {
+        //     this.trigger('place_bumper', this)
+        // })
 
-        registerKeypress('e', () =>{
-            this.emitter.emit = true
+        this.anim = new Loop(this, 1200, () => {
             this.tween(this.bg)
-                .to({rotation: this.bg.rotation + (Math.PI * 3/2)}, 500)
+                .to({rotation: this.bg.rotation + (Math.PI * 3 / 2)}, 500)
                 .easing(Easing.Back.InOut)
                 .start()
-                .onComplete(() => {
-                    this.emitter.emit = false
-                })
+            this.anim_times += 1
         })
+
+        this.locker.visible = false
+
+        fixers.push(this)
+    }
+
+    anim_start() {
+        this.anim.startIfNot(true)
+        this.emitter.emit = true
+        this.tween(this.bg)
+            .to({alpha: 1}, 300)
+            .easing(Easing.Quartic.Out)
+            .start()
+    }
+
+    anim_end() {
+        this.anim.stop()
+        this.emitter.emit = false
+        const need = Math.ceil(this.bg.rotation / Math.PI) - (this.bg.rotation / Math.PI)
+        this.tween(this.bg)
+            .to({alpha: 0.5}, 300)
+            .easing(Easing.Quartic.Out)
+            .start()
+
+        this.tween(this.bg)
+            .to({rotation: this.bg.rotation + (Math.PI * need)}, 500)
+            .easing(Easing.Back.InOut)
+            .start()
+            .delay(1100)
+    }
+
+    anim_buy() {
+        this.tween(this.locker)
+            .to({alpha: 0}, 200)
+            .start()
     }
 
     destroy(options?: DestroyOptions) {
@@ -269,7 +433,7 @@ class BumperPlace extends BaseNode {
 
 class Bumper extends NodePhysics {
     bg = Sprite.from('')
-    selected = graphics().circle(0, 0, 50).stroke({color: 'green', alignment: 0, width: 5})
+    selected = new Container()
     shape = Bodies.circle(0, 0, 60, {restitution: 10.93, isStatic: true, label: 'bumper'})
     marker = create_text({
         text: '',
@@ -279,6 +443,10 @@ class Bumper extends NodePhysics {
     id = -1
     type = 'add'
     anim
+    fixer_id = -1
+    cell_id= {ix: -1, iy: -1}
+    mouse_field = graphics()
+    isAnim = false
 
     constructor(level: number, mode: string) {
         super()
@@ -287,40 +455,27 @@ class Bumper extends NodePhysics {
         this.bg.anchor.set(0.5)
         this.bg.scale.set(0.5)
 
-        this.addChild(this.bg)
+        const p1 = create_sprite('particle')
+        p1.scale.set(3.4)
+        const p2 = create_sprite('particle_dark')
+        p2.scale.set(3.5)
+        // this.selected.addChild(p2)
+        this.selected.addChild(p1)
+
         this.addChild(this.selected)
+        this.addChild(this.bg)
         this.addChild(this.marker)
+        this.addChild(this.mouse_field)
         this.selected.alpha = 0
+        this.mouse_field.alpha = 0
 
         PhysicsEngine.add(this, this.shape)
 
-        // make_draggable(this)
+        make_draggable(this)
         this.interactive = true
+        this.shape.isSensor = true
 
-        this.on('pointerdown', () => {
-            if (!bumper_selected) {
-                bumper_selected = this
-                this.selected.alpha = 1
-                return
-            }
-
-            if (bumper_selected === this) {
-                // bumper_selected = undefined
-                this.switch_type()
-                return
-            }
-            if (bumper_selected.level !== this.level) {
-                bumper_selected.selected.alpha = 0
-                bumper_selected = this
-                this.selected.alpha = 1
-                return
-            }
-
-            this.upgrade()
-            this.selected.alpha = 0
-            bumper_selected.destroy()
-            bumper_selected = undefined
-        })
+        bumpers.push(this)
 
         const rotate_around = (percent: number, radius: number) => {
             const angle = percent * 2 * Math.PI
@@ -339,21 +494,103 @@ class Bumper extends NodePhysics {
             .repeat(Infinity)
             .start()
 
-        // this.on('dragstart', (event) => {
-        //     event.stopPropagation()
-        // })
-        // this.on('dragmove', (event) => {
-        //     event.stopPropagation()
-        //     const point = this.parent.toLocal(event.global)
-        //     this.set_position(point)
-        // })
-        // this.on('dragend', (event) => {
-        //     event.stopPropagation()
-        // })
+        let prev_parent: any
+        const prev_position = new_point()
+        this.on('dragstart', (event) => {
+            event.stopPropagation()
+            prev_parent = this.parent
+            prev_position.copyFrom(this)
+            room.addChild(this)
+            const point = this.parent.toLocal(event.global)
+            this.set_position(point)
+            this.shape.isSensor = true
+            fixers_enable()
+            this.tween(this.selected)
+                .to({alpha: 1}, 50)
+                .start()
+            this.mouse_field.circle(0,0, 500).fill('white')
+        })
+        this.on('dragmove', (event) => {
+            event.stopPropagation()
+            const point = this.parent.toLocal(event.global)
+            this.set_position(point)
+        })
+        this.on('dragend', (event) => {
+            this.mouse_field.clear()
+
+            this.tween(this.selected)
+                .to({alpha: 0}, 60)
+                .start()
+
+            const end = () => {
+                for (const fixer of pole.fixers.children) {
+                    if (fixer.id === this.fixer_id) fixer.owned = false
+                }
+                for (const mc of merge_cells) {
+                    if (mc.ix === this.cell_id.ix && mc.iy === this.cell_id.iy) mc.isFree = true
+                }
+            }
+
+            event.stopPropagation()
+            fixers_disable()
+
+            const global = this.parent?.toGlobal(this)
+
+            for (const fixer of pole.fixers.children) {
+                if (fixer.owned) continue
+                const pos = fixer.parent?.toGlobal(fixer.position)
+                const has_intersection = detect_circle_intersection(global, 80, pos, 40)
+                if (has_intersection) {
+                    end()
+                    pole.bumpers.addChild(this)
+                    this.set_position(fixer)
+                    this.shape.isSensor = false
+                    fixer.owned = true
+                    this.fixer_id = fixer.id
+                    return
+                }
+            }
+
+            for (const bumper of bumpers) {
+                if (bumper === this) continue
+                const pos = bumper.parent?.toGlobal(bumper.position)
+                const has_intersection = detect_circle_intersection(global, 30, pos, 30)
+                if (has_intersection) {
+                    end()
+                    bumper.upgrade()
+                    this.destroy()
+                    return
+                }
+            }
+
+            for (const mc of merge_cells) {
+                if (!mc.isFree) continue
+                const pos = mc.parent?.toGlobal(mc.position)
+                pos.x += mc.bw/4
+                pos.y += mc.bh/4
+                const has_intersection = detect_circle_intersection(global, 10, pos, 40)
+                if (has_intersection) {
+                    end()
+                    merge_panel.set_to(mc.ix,mc.iy, this)
+                    this.shape.isSensor = true
+                    return
+                }
+            }
+
+
+            if (prev_parent) {
+                prev_parent.addChild(this)
+                this.set_position(prev_position)
+                this.shape.isSensor = false
+            }
+
+        })
 
         if (mode === 'multiply') this.switch_type()
 
         this.draw()
+
+        registerKeypress('e', () => this.anim_bounce())
     }
 
     switch_type() {
@@ -392,6 +629,32 @@ class Bumper extends NodePhysics {
 
         this.level += 1
         this.draw()
+    }
+
+    destroy(options?: DestroyOptions) {
+        console.log('b4', bumpers.length)
+        bumpers = bumpers.filter(el=>el.slug !== this.slug)
+        super.destroy(options);
+    }
+
+    anim_bounce() {
+        if (this.isAnim) return
+        const prev = this.bg.scale.x
+        this.tween(this.bg)
+            .to({scale: {x:prev-0.05, y:prev-0.05}}, 10)
+            .easing(Easing.Quartic.Out)
+            .start()
+        this.set_timeout(12, () => {
+            this.tween(this.bg)
+                .to({scale: {x:prev, y:prev}}, 10)
+                .easing(Easing.Quartic.In)
+                .start()
+        })
+
+        this.set_timeout(30, () => {
+            this.isAnim = false
+            this.bg.scale.set(prev)
+        })
     }
 }
 
@@ -516,17 +779,17 @@ class Pole extends BaseNode {
     fg = new ForegroundPole()
     balls_mask = graphics().roundRect(0, 0, 100, 100, 7).fill({color: 0xffffff, alpha: 1})
     balls = new Container<Ball>()
-    bumpers_places = new Container<BumperPlace>()
+    fixers = new Container<Fixer>()
     bumpers = new Container<Bumper>()
     walls = new Container<Wall>()
     loop: Loop
 
     constructor() {
         super()
-
+        fixers.length = 0
         this.addChild(this.bg)
         this.addChild(particles_container)
-        this.addChild(this.bumpers_places)
+        this.addChild(this.fixers)
         this.addChild(this.balls)
         this.addChild(this.bumpers)
         this.addChild(this.balls_mask)
@@ -551,22 +814,6 @@ class Pole extends BaseNode {
 
         this.interactive = true
 
-        this.on('place_bumper', (place: BumperPlace) => {
-            const point = new Point().copyFrom(place)
-            // point.x -= 30
-            // point.y -= 30
-            // spawn_bumper(point)
-            if (!bumper_selected) return
-
-            // if(this.bumpers.children.includes(bumper_selected)) return
-            bumper_selected.id = place.id
-            bumper_selected.set_position(point)
-            this.bumpers.addChild(bumper_selected)
-            bumper_selected.selected.alpha = 0
-            bumper_selected = undefined
-
-        })
-
         PhysicsEngine.on('collisionstart', (event) => {
             event.pairs.forEach(({bodyA, bodyB}: any) => {
                 // Check if a ball has collided with a bumper
@@ -575,7 +822,7 @@ class Pole extends BaseNode {
 
                 const maxSpeed = 25
 
-                if (ball && bumper) {
+                if (ball && bumper && !bumper.isSensor) {
                     const velocityIncrease = 2
                     const currentVelocity = ball.velocity
 
@@ -584,7 +831,7 @@ class Pole extends BaseNode {
                     const node_ball = PhysicsEngine.get_node(ball)
                     const node_bumper = PhysicsEngine.get_node(bumper)
                     node_ball.upgrade(node_bumper.value, node_bumper.type)
-                    // node_bumper.upgrade()
+                    node_bumper.anim_bounce()
 
                     const speed = Math.sqrt(boostedVelocity.x ** 2 + boostedVelocity.y ** 2);
                     if (speed > maxSpeed) {
@@ -635,45 +882,50 @@ class Pole extends BaseNode {
         wall_r.set_position({x: -160, y: this.bh * 0.5})
         wall_l.set_position({x: this.bw + 160, y: this.bh * 0.5})
 
-        this.walls.addChild(wall_r, wall_l)
+        const wall_t1 = new Wall(0, 0, this.bw /1.8, 580)
+        wall_t1.set_position({x: 0, y: -280})
+        const wall_t2 = new Wall(0, 0, this.bw /1.8, 580)
+        wall_t2.set_position({x: this.bw, y: -280})
+
+        this.walls.addChild(wall_r, wall_l, wall_t1, wall_t2)
 
         // places
 
-        this.bumpers_places.children.forEach(el => el.destroy())
+        this.fixers.children.forEach(el => el.destroy())
 
-        const place1 = new BumperPlace(1)
+        const place1 = new Fixer(1)
         place1.position.x = this.bw * 0.5
-        place1.position.y = this.bh * 0.3
-        this.bumpers_places.addChild(place1)
+        place1.position.y = this.bh * 0.4
+        this.fixers.addChild(place1)
 
 
-        const place2 = new BumperPlace(2)
+        const place2 = new Fixer(2)
         place2.position.x = this.bw * 0.25
         place2.position.y = this.bh * 0.5
-        this.bumpers_places.addChild(place2)
+        this.fixers.addChild(place2)
 
 
-        const place3 = new BumperPlace(3)
+        const place3 = new Fixer(3)
         place3.position.x = this.bw * 0.75
         place3.position.y = this.bh * 0.5
-        this.bumpers_places.addChild(place3)
+        this.fixers.addChild(place3)
 
 
-        const place4 = new BumperPlace(4)
+        const place4 = new Fixer(4)
         place4.position.x = this.bw * 0.15
         place4.position.y = this.bh * 0.8
-        this.bumpers_places.addChild(place4)
+        this.fixers.addChild(place4)
 
 
-        const place5 = new BumperPlace(5)
+        const place5 = new Fixer(5)
         place5.position.x = this.bw * 0.85
         place5.position.y = this.bh * 0.8
-        this.bumpers_places.addChild(place5)
+        this.fixers.addChild(place5)
 
-        const place6 = new BumperPlace(6)
+        const place6 = new Fixer(6)
         place6.position.x = this.bw * 0.5
-        place6.position.y = this.bh * 0.65
-        this.bumpers_places.addChild(place6)
+        place6.position.y = this.bh * 0.7
+        this.fixers.addChild(place6)
     }
 }
 
@@ -741,13 +993,17 @@ class Button extends BaseNode {
 
 class MergeCell extends BaseNode {
     bg = create_sprite('merge_cell')
+    isFree = true
     initial_size
+    ix = -1
+    iy = -1
 
     constructor() {
         super()
         this.addChild(this.bg)
         this.bg.anchor.set(0)
         this.initial_size = this.bg.width
+        merge_cells.push(this)
     }
 
     resize() {
@@ -762,10 +1018,13 @@ class MergePanel extends BaseNode {
     cells = new Container<MergeCell>()
     map: Map<number, any> = new Map()
     map_cells: Map<number, any> = new Map()
+    bumpers = new Container()
 
     constructor() {
         super()
         this.addChild(this.cells)
+        this.addChild(this.bumpers)
+        merge_panel = this
     }
 
     set(ix: number, iy: number, child: any) {
@@ -798,13 +1057,35 @@ class MergePanel extends BaseNode {
         return this.map_cells.get(num)!
     }
 
+    hasFree() {
+        for (let ix = 0; ix < 5; ix++) {
+            for (let iy = 0; iy < 2; iy++) {
+                const cell = this._get(ix, iy)
+                if (cell.isFree) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    set_to(ix: number, iy: number, child: any) {
+        const cell = this._get(ix, iy)
+        this.bumpers.addChild(child)
+        child.set_position({x: cell.bw * 0.5 - 8 + cell.x, y: cell.bh * 0.5 - 8 + cell.y})
+        cell.isFree = false
+        child.cell_id = {ix, iy}
+    }
+
     set_random_free(child: any) {
         for (let ix = 0; ix < 5; ix++) {
             for (let iy = 0; iy < 2; iy++) {
                 const cell = this._get(ix, iy)
-                if (cell.children.length < 2) {
-                    cell.addChild(child)
-                    child.set_position({x: cell.bw * 0.5 - 8, y: cell.bh * 0.5 - 8})
+                if (cell.isFree) {
+                    this.bumpers.addChild(child)
+                    child.set_position({x: cell.bw * 0.5 - 8 + cell.x, y: cell.bh * 0.5 - 8 + cell.y})
+                    cell.isFree = false
+                    child.cell_id = {ix, iy}
                     return
                 }
             }
@@ -813,11 +1094,12 @@ class MergePanel extends BaseNode {
 
     resize() {
         super.resize()
-
+        merge_cells.length = 0
+        const free = this.cells.children.map(el => el.isFree)
         if (this.cells) this.cells.destroy()
 
         this.cells = new Container()
-        this.addChild(this.cells)
+        this.addChildAt(this.cells, 0)
 
         const cell_size = this.bw / 5
         for (let ix = 0; ix < 5; ix++) {
@@ -830,7 +1112,13 @@ class MergePanel extends BaseNode {
                 cell.position.x = ix * cell_size
                 cell.position.y = iy * cell_size
                 this._set(ix, iy, cell)
+                cell.ix = ix
+                cell.iy = iy
             }
+        }
+
+        for (let i = 0; i < free.length; i++) {
+            this.cells.getChildAt(i).isFree = free[i]
         }
     }
 }
@@ -895,6 +1183,7 @@ class Panel extends BaseNode {
 
         this.button_bumper.on('pointerdown', () => {
             if (coins < update_bumper.price) return
+            if (!this.merge_panel.hasFree()) return
             coins -= update_bumper.price
 
             update_bumper.level += 1
@@ -929,10 +1218,6 @@ class Panel extends BaseNode {
             this.merge_panel.set_random_free(bumper)
 
             stats_bumpers.push(bumper)
-
-            if (bumper_selected) bumper_selected.selected.alpha = 0
-            bumper_selected = bumper
-            bumper_selected.selected.alpha = 1
         })
 
         this.button_speed.on('pointerdown', () => {
@@ -1043,6 +1328,8 @@ export default class S_Room extends BaseNode {
 
     constructor() {
         super()
+        room = this
+        pole = this.pole
         this.addChild(this.bg)
         this.addChild(this.pole)
         this.addChild(this.marker_score)

@@ -48,3 +48,8 @@ export function calculate_bumper_level(stats: any) {
 
     return Number(random_choice(Object.keys(stats)))
 }
+
+export const detect_circle_intersection = (pos_a: { x: number, y: number }, radius_a: number, pos_b: { x: number, y: number }, radius_b: number): boolean => {
+    const distance = Math.sqrt((pos_b.x - pos_a.x) ** 2 + (pos_b.y - pos_a.y) ** 2)
+    return distance < radius_a + radius_b
+}

@@ -31,7 +31,7 @@ export const create_animated_sprite = (name: string) => {
     return a
 }
 
-export const point = (x?: number, y?: number) => {
+export const new_point = (x?: number, y?: number) => {
     return new Point(x, y)
 }
 

@@ -13,7 +13,7 @@
 		"end": "#9ff3ff"
 	},
 	"speed": {
-		"start": 50,
+		"start": 150,
 		"end": 20,
 		"minimumSpeedMultiplier": 1
 	},
@@ -37,7 +37,6 @@
 	},
 	"blendMode": "normal",
 	"frequency": 0.11,
-	"emitterLifetime": 1,
 	"maxParticles": 100,
 	"pos": {
 		"x": 0,

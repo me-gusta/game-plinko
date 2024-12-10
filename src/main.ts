@@ -26,7 +26,7 @@ const init = async () => {
         src: '/assets/fonts/bubblebody.ttf',
     })
 
-    // await AssetManager.load_spritesheet('main')
+    await AssetManager.load_spritesheet('spin')
 
     const app = new Application()
     window.app = app

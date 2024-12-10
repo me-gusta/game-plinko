@@ -6,7 +6,7 @@ class AssetManager {
     async load_spritesheet(name: string) {
         await Assets.load({
             alias: name,
-            src: `/assets/auto-ss/compiled/${name}.json`,
+            src: `/assets/animations/${name}.json`,
         })
 
         const sheet: Spritesheet = Assets.get(name)

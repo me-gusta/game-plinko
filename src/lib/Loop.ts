@@ -36,6 +36,5 @@ export default class Loop {
     stop = () => {
         this.node.clear_timeout(this.timeoutId)
         this.timeoutId = -1
-        console.log('sad')
     }
 }
