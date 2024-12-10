@@ -1,0 +1,15 @@
+export default {
+    bright: '#ffffff',
+    dark: '#000000',
+    sea1: `#508851`,
+    sea2: `#6A5C4D`,
+    sea3: `#265785`,
+    add1: '#064e80',
+    multiply1: '#2e8f07',
+    bumper6: '#88370a',
+    bumper7: '#138f62',
+    bumper8: '#8510a5',
+    bumper9: '#cd068d',
+    bumper10: '#f80650',
+    bumper11: '#000000',
+}
