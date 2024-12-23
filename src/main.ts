@@ -26,6 +26,10 @@ const init = async () => {
         src: '/assets/fonts/bubblebody.ttf',
     })
 
+    await AssetManager.load_spritesheet('buy_fixer')
+    await AssetManager.load_spritesheet('jackpot')
+    await AssetManager.load_spritesheet('merge')
+    await AssetManager.load_spritesheet('spawn')
     await AssetManager.load_spritesheet('spin')
 
     const app = new Application()
@@ -47,14 +51,16 @@ const init = async () => {
         const canvas_box = document.getElementById('canvas-box')!
 
         const ratio = windowWidth / windowHeight
-        if (ratio < RATIO_V_MAX || ratio > RATIO_H_MIN) {
-            canvas_box.style.width = "100%"
-            canvas_box.style.height = "100%"
-        } else {
-            const mobileWidth = windowHeight * (9 / 16)
-            canvas_box.style.width = `${mobileWidth}px`
-            canvas_box.style.height = `${windowHeight}px`
-        }
+        // if (ratio < RATIO_V_MAX || ratio > RATIO_H_MIN) {
+        //     canvas_box.style.width = "100%"
+        //     canvas_box.style.height = "100%"
+        // } else {
+        //     const mobileWidth = windowHeight * (9 / 16)
+        //     canvas_box.style.width = `${mobileWidth}px`
+        //     canvas_box.style.height = `${windowHeight}px`
+        // }
+        canvas_box.style.width = `${windowWidth}px`
+        canvas_box.style.height = `${windowHeight}px`
 
         const rect = canvas_box.getBoundingClientRect()
 
@@ -74,15 +80,15 @@ const init = async () => {
         const screenScale = Math.min(width / 960.0, height / 960.0)
 
         window.screen_size = {
-            width: width / screenScale,
-            height: height / screenScale,
+            width: width,
+            height: height,
             ratio: 1,
             vertical: false
         }
         window.screen_size.ratio = window.screen_size.width / window.screen_size.height
         window.screen_size.vertical = window.screen_size.ratio <= 1
 
-        app.stage.scale.set(screenScale)
+        // app.stage.scale.set(screenScale)
 
         app.stage.position.set(width / 2, height / 2)
 

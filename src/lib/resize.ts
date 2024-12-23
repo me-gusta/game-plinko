@@ -2,7 +2,7 @@ import {Container} from 'pixi.js'
 import BaseNode from '$lib/BaseNode'
 
 export const RATIO_MIN = 9 / 20
-export const RATIO_V_MAX = 0.8
+export const RATIO_V_MAX = 0.7
 export const RATIO_H_MIN = 1.35
 
 export const vary = (from: number, to: number) => {

@@ -9,7 +9,7 @@ import {
     Point,
     BlurFilter,
     ColorMatrixFilter,
-    TilingSprite, Texture, Sprite, AnimatedSprite,
+    TilingSprite, Texture, Sprite, AnimatedSprite, EventEmitter,
 } from 'pixi.js'
 import {create_sprite, create_text, graphics, new_point} from '$lib/create_things'
 import {h_const, w_const} from '$lib/resize'
@@ -32,11 +32,53 @@ import {
 import {Easing} from '@tweenjs/tween.js'
 import AssetManager from '$lib/AssetManager'
 import make_draggable from '$lib/make_draggable'
-import {detect_circle_intersection} from '$src/game/utility'
+import {detect_circle_intersection, mapRange, shorten_num} from '$src/game/utility'
+import {IPoint} from '$lib/Vector'
 
-const twp: any = new Pane()
+class Value extends EventEmitter {
+    amount: number
 
-let coins = 1000000000
+    constructor(amount: number) {
+        super()
+        this.amount = amount
+    }
+
+    set(amount: number) {
+        const prev = this.amount
+        this.amount = amount
+        this.amount = Math.floor(this.amount)
+        this.emit('change', {
+            prev,
+            value: this.amount,
+        })
+    }
+
+    mul(amount: number) {
+        const prev = this.amount
+        this.amount *= amount
+        this.amount = Math.floor(this.amount)
+        this.emit('change', {
+            prev,
+            value: this.amount,
+        })
+    }
+
+    add(amount: number) {
+        const prev = this.amount
+        this.amount += amount
+        this.amount = Math.floor(this.amount)
+        this.emit('change', {
+            prev,
+            value: this.amount,
+        })
+    }
+
+    sub(amount: number) {
+        this.add(-amount)
+    }
+}
+
+const coins = new Value(0)
 const update_speed = {
     price: 30,
     level: 1,
@@ -88,6 +130,7 @@ const bumper_values: any = {
         10: 512,
         11: 1024,
         12: 2048,
+        13: 4096,
     },
     multiply: {
         1: 1.2,
@@ -105,9 +148,9 @@ const bumper_values: any = {
     },
 }
 
-let last_20: any[] = []
+let last_20: any[] = [100]
 
-let room!: any
+let room!: S_Room
 
 const particles_container = new Container()
 
@@ -131,10 +174,36 @@ let bumpers: Bumper[] = []
 const merge_cells: MergeCell[] = []
 let merge_panel!: MergePanel
 
+const fixer_prices: any = {
+    2: 100,
+    4: 2500,
+    5: 15000,
+    1: 80000,
+}
+
+const create_fx = (name: string, pos_global: IPoint) => {
+    const pos = room.toLocal(pos_global)
+    const textures = AssetManager.get(name)
+    const sprite = new AnimatedSprite(textures)
+    sprite.texture.baseTexture.scaleMode = 'nearest'
+    sprite.loop = false
+    sprite.position.copyFrom(pos)
+    room.addChild(sprite)
+    sprite.animationSpeed = 0.8
+    sprite.onFrameChange = (n: number) => {
+        if (n === textures.length - 1) sprite.destroy()
+    }
+    sprite.anchor.set(0.5)
+    sprite.scale.set(4)
+    sprite.gotoAndPlay(0)
+    return sprite
+}
+
+
 class Ball extends NodePhysics {
     color = graphics().circle(0, 0, 70).fill({color: '#ec9f9f', alpha: 1})
     bg = create_sprite('ball')
-    level = 2 ** (update_cash.level - 1)
+    level = Math.max(2 ** (update_cash.level - 1), 1)
     marker: Text
     container = new Container()
     emitter: Emitter
@@ -218,9 +287,9 @@ class Ball extends NodePhysics {
 
     set_value() {
         this.level = Math.floor(this.level)
+        const level = this.level
 
-        if (this.level < 1000) this.marker.text = this.level
-        else this.marker.text = `${(this.level / 1000).toFixed(1)}k`
+        this.marker.text = shorten_num(level)
 
         const min = find_x(1)
         const y = find_x(this.level)
@@ -274,6 +343,7 @@ class FixerLocker extends BaseNode {
     private spin: AnimatedSprite
     private blackWhite: ColorMatrixFilter
     private unlocked: boolean = false
+    price = 0
 
     constructor() {
         super()
@@ -317,6 +387,25 @@ class FixerLocker extends BaseNode {
             this.spin.gotoAndStop(0)
         }
 
+        this.box.alpha = 0.8
+
+        coins.on('change', ({prev, value}) => {
+            if (value >= this.price && !this.unlocked) {
+                this.anim_unlock()
+            }
+            if (value < this.price && this.unlocked) {
+                this.anim_lock()
+            }
+        })
+
+        this.on('pointerup', () => {
+            this.trigger('buy_fixer', this.price)
+        })
+    }
+
+    setPrice(value: number) {
+        this.price = value
+        this.marker.text = `$${value}`
     }
 
     anim_unlock() {
@@ -326,19 +415,21 @@ class FixerLocker extends BaseNode {
             this.box.filters = []
         })
         this.unlocked = true
+        this.interactive = true
+        this.cursor = 'pointer'
     }
 
     anim_lock() {
-
         this.spin.visible = true
         this.spin.play()
         this.set_timeout(100, () => {
             this.box.filters = [this.blackWhite]
         })
         this.unlocked = false
+        this.interactive = false
+        this.cursor = 'auto'
     }
 }
-
 
 class Fixer extends BaseNode {
     bg = create_sprite('fixer')
@@ -350,6 +441,7 @@ class Fixer extends BaseNode {
     private anim: any
     anim_times = 0
     owned = false
+    locked = false
 
     constructor(id: number) {
         super()
@@ -388,9 +480,34 @@ class Fixer extends BaseNode {
         this.locker.visible = false
 
         fixers.push(this)
+
+        if (![6, 3].includes(this.id)) {
+            this.locker.setPrice(fixer_prices[this.id])
+            this.locker.visible = true
+            this.owned = true
+            this.locked = true
+            this.bg.visible = false
+        }
+
+        this.on('buy_fixer', (price: number) => {
+            coins.sub(price)
+            this.bg.visible = true
+            this.tween(this.locker)
+                .to({alpha: 0}, 300)
+                .start()
+            this.set_timeout(310, () => {
+                this.locker.visible = false
+                this.owned = false
+                this.locked = false
+            })
+            const fx = create_fx('buy_fixer', this.parent?.toGlobal(this))
+            fx.animationSpeed = 0.4
+            fx.scale.set(6)
+        })
     }
 
     anim_start() {
+        if (this.locked) return
         this.anim.startIfNot(true)
         this.emitter.emit = true
         this.tween(this.bg)
@@ -415,11 +532,6 @@ class Fixer extends BaseNode {
             .delay(1100)
     }
 
-    anim_buy() {
-        this.tween(this.locker)
-            .to({alpha: 0}, 200)
-            .start()
-    }
 
     destroy(options?: DestroyOptions) {
         super.destroy(options);
@@ -442,9 +554,9 @@ class Bumper extends NodePhysics {
     level = 1
     id = -1
     type = 'add'
-    anim
+    anim_float
     fixer_id = -1
-    cell_id= {ix: -1, iy: -1}
+    cell_id = {ix: -1, iy: -1}
     mouse_field = graphics()
     isAnim = false
 
@@ -484,7 +596,7 @@ class Bumper extends NodePhysics {
             return {x, y}
         }
 
-        this.anim = this.tween({value: 0})
+        this.anim_float = this.tween({value: 0})
             .to({value: 1}, 10000)
             .onUpdate(obj => {
                 const {value} = obj
@@ -492,7 +604,6 @@ class Bumper extends NodePhysics {
             })
             .yoyo(true)
             .repeat(Infinity)
-            .start()
 
         let prev_parent: any
         const prev_position = new_point()
@@ -508,7 +619,7 @@ class Bumper extends NodePhysics {
             this.tween(this.selected)
                 .to({alpha: 1}, 50)
                 .start()
-            this.mouse_field.circle(0,0, 500).fill('white')
+            this.mouse_field.circle(0, 0, 500).fill('white')
         })
         this.on('dragmove', (event) => {
             event.stopPropagation()
@@ -556,9 +667,32 @@ class Bumper extends NodePhysics {
                 const pos = bumper.parent?.toGlobal(bumper.position)
                 const has_intersection = detect_circle_intersection(global, 30, pos, 30)
                 if (has_intersection) {
-                    end()
-                    bumper.upgrade()
-                    this.destroy()
+                    if (bumper.level === this.level && bumper.type === this.type) {
+                        end()
+                        bumper.upgrade()
+                        this.destroy()
+                    } else {
+                        const other_parent = bumper.parent
+                        const other_position = new_point().copyFrom(bumper.position)
+                        const other_fixer_id = bumper.fixer_id
+                        const other_cell_id = bumper.cell_id
+                        prev_parent.addChild(bumper)
+                        bumper.set_position(prev_position)
+
+                        other_parent?.addChild(this)
+                        this.set_position(other_position)
+
+                        bumper.fixer_id = this.fixer_id
+                        bumper.cell_id = this.cell_id
+                        this.fixer_id = other_fixer_id
+                        this.cell_id = other_cell_id
+                        pole.bumpers.children.forEach(el => {
+                            el.shape.isSensor = false
+                        })
+                        merge_panel.bumpers.children.forEach(el => {
+                            el.shape.isSensor = true
+                        })
+                    }
                     return
                 }
             }
@@ -566,12 +700,12 @@ class Bumper extends NodePhysics {
             for (const mc of merge_cells) {
                 if (!mc.isFree) continue
                 const pos = mc.parent?.toGlobal(mc.position)
-                pos.x += mc.bw/4
-                pos.y += mc.bh/4
+                pos.x += mc.bw / 4
+                pos.y += mc.bh / 4
                 const has_intersection = detect_circle_intersection(global, 10, pos, 40)
                 if (has_intersection) {
                     end()
-                    merge_panel.set_to(mc.ix,mc.iy, this)
+                    merge_panel.set_to(mc.ix, mc.iy, this)
                     this.shape.isSensor = true
                     return
                 }
@@ -589,8 +723,6 @@ class Bumper extends NodePhysics {
         if (mode === 'multiply') this.switch_type()
 
         this.draw()
-
-        registerKeypress('e', () => this.anim_bounce())
     }
 
     switch_type() {
@@ -612,7 +744,7 @@ class Bumper extends NodePhysics {
     }
 
     draw() {
-        const texture = Texture.from('bumper_' + this.type + this.level)
+        const texture = Texture.from('bumper_' + this.type + Math.min(this.level, 11))
         this.bg.texture = texture
 
         this.marker.text = this.type === 'add' ? '+' : 'x'
@@ -623,35 +755,51 @@ class Bumper extends NodePhysics {
         } else {
             this.marker.style.stroke = {color: this.type === 'add' ? colors.add1 : colors.multiply1, width: 10}
         }
+
+        if (this.level > 8) {
+            this.anim_float.stop()
+            this.anim_float.to({value: 1}, 5000)
+            this.anim_float.start()
+        }
+        if (this.level > 3) {
+            this.anim_float.start()
+        }
+
     }
 
     upgrade() {
 
+        if (!bumper_values[this.type][this.level + 1]) return
+
         this.level += 1
         this.draw()
+        const fx = create_fx('merge', this.parent?.toGlobal(this))
+        fx.scale.set(7, 8)
+        fx.alpha = 0.6
     }
 
     destroy(options?: DestroyOptions) {
         console.log('b4', bumpers.length)
-        bumpers = bumpers.filter(el=>el.slug !== this.slug)
+        bumpers = bumpers.filter(el => el.slug !== this.slug)
         super.destroy(options);
     }
 
     anim_bounce() {
         if (this.isAnim) return
+        this.isAnim = true
         const prev = this.bg.scale.x
         this.tween(this.bg)
-            .to({scale: {x:prev-0.05, y:prev-0.05}}, 10)
+            .to({scale: {x: prev - 0.05, y: prev - 0.05}}, 10)
             .easing(Easing.Quartic.Out)
             .start()
         this.set_timeout(12, () => {
             this.tween(this.bg)
-                .to({scale: {x:prev, y:prev}}, 10)
+                .to({scale: {x: prev, y: prev}}, 10)
                 .easing(Easing.Quartic.In)
                 .start()
         })
 
-        this.set_timeout(30, () => {
+        this.set_timeout(50, () => {
             this.isAnim = false
             this.bg.scale.set(prev)
         })
@@ -809,8 +957,16 @@ class Pole extends BaseNode {
             this.balls.addChild(ball)
         })
 
-        this.loop.start()
-
+        this.loop.start(true)
+        setTimeout(() => {
+            const ball = new Ball()
+            const margin = 80
+            ball.set_position({
+                x: this.bw * 0.5 + random_int(-margin, margin),
+                y: 80,
+            })
+            this.balls.addChild(ball)
+        }, 2)
 
         this.interactive = true
 
@@ -851,11 +1007,82 @@ class Pole extends BaseNode {
                 this.trigger('add_coins', ball.level)
                 if (last_20.length > 20) last_20 = last_20.slice(1)
                 ball.counted = true
+                this.fx_score(ball.level, ball.parent?.toGlobal(ball))
+                last_20.push(ball.level)
             }
             if (ball.position.y >= this.bh + 1000) {
                 ball.destroy()
-                last_20.push(ball.level)
             }
+        }
+
+    }
+
+    fx_score(amount: number, pos: IPoint) {
+        const last_avg = (last_20.reduce((a, b) => a + b, 0)) / last_20.length
+
+        const percent = amount - last_avg > 50 ? amount / last_avg : 0.1
+
+        const t = create_text({
+            text: `$${shorten_num(amount)}`, style: {
+                fontSize: 40, fill: '#ffffff', fontFamily: 'bubblebody',
+                // stroke: {width: 10, color: '#d11658'},
+            },
+        })
+
+        const scale = percent > 0.4 ? Math.min(mapRange(percent, 0.4, 10, 1, 3), 3) : 1
+        t.scale.set(scale)
+        t.position.copyFrom(particles_container.toLocal(pos))
+        t.y = this.bh + t.height
+        t.anchor.y = 1
+        this.tween(t)
+            .to({y: this.bh - 50}, 250)
+            .start()
+
+        if (scale > 2.8) {
+            t.style.stroke = {width: 10, color: '#d11658'}
+        } else if (scale > 2) {
+            t.style.stroke = {width: 10, color: '#5b33b6'}
+        } else if (scale > 1.2) {
+            t.style.stroke = {width: 10, color: '#48df4a'}
+        }
+
+        if (scale > 2.8) {
+            const fx = create_fx('spawn', {x: 0, y: 0})
+            fx.position.copyFrom(t)
+            fx.y = this.bh - 100
+            fx.scale.set(12)
+            fx.gotoAndStop(0)
+            fx.visible = false
+            fx.animationSpeed = 0.6
+            fx.rotation = random_float(0, 100)
+
+            this.set_timeout(240, () => {
+                fx.visible = true
+                fx.gotoAndPlay(0)
+            })
+
+            t.rotation = -Math.PI / 14
+            particles_container.addChild(fx)
+            particles_container.addChild(t)
+            this.set_timeout(550, () => {
+                this.tween(t)
+                    .to({alpha: 0}, 50)
+                    .start()
+                    .onComplete(() => {
+                        t.destroy()
+                    })
+            })
+        } else {
+
+            particles_container.addChild(t)
+            this.set_timeout(550, () => {
+                this.tween(t)
+                    .to({alpha: 0}, 50)
+                    .start()
+                    .onComplete(() => {
+                        t.destroy()
+                    })
+            })
         }
 
     }
@@ -882,15 +1109,15 @@ class Pole extends BaseNode {
         wall_r.set_position({x: -160, y: this.bh * 0.5})
         wall_l.set_position({x: this.bw + 160, y: this.bh * 0.5})
 
-        const wall_t1 = new Wall(0, 0, this.bw /1.8, 580)
+        const wall_t1 = new Wall(0, 0, this.bw / 1.8, 580)
         wall_t1.set_position({x: 0, y: -280})
-        const wall_t2 = new Wall(0, 0, this.bw /1.8, 580)
+        const wall_t2 = new Wall(0, 0, this.bw / 1.8, 580)
         wall_t2.set_position({x: this.bw, y: -280})
 
         this.walls.addChild(wall_r, wall_l, wall_t1, wall_t2)
 
         // places
-
+        fixers.length = 0
         this.fixers.children.forEach(el => el.destroy())
 
         const place1 = new Fixer(1)
@@ -935,6 +1162,8 @@ class Button extends BaseNode {
     bg_mask !: Graphics
     shadow !: Graphics
     marker: Text
+    locked: boolean
+    private blackWhite: ColorMatrixFilter
 
     constructor(text: string) {
         super()
@@ -955,6 +1184,35 @@ class Button extends BaseNode {
 
         this.interactive = true
         this.cursor = 'pointer'
+
+        this.on('pointerdown', () => {
+            if (this.locked) return
+            this.scale.set(0.9)
+            this.shadow.alpha = 0
+        })
+
+        this.on('pointerup', () => {
+            this.scale.set(1)
+            this.shadow.alpha = 1
+        })
+        this.on('pointerupoutside', () => {
+            this.scale.set(1)
+            this.shadow.alpha = 1
+        })
+
+
+        this.blackWhite = new ColorMatrixFilter()
+        this.blackWhite.blackAndWhite(false)
+    }
+
+    anim_locked() {
+        this.locked = true
+        this.filters = [this.blackWhite]
+    }
+
+    anim_unlocked() {
+        this.locked = false
+        this.filters = []
     }
 
     resize() {
@@ -1018,7 +1276,7 @@ class MergePanel extends BaseNode {
     cells = new Container<MergeCell>()
     map: Map<number, any> = new Map()
     map_cells: Map<number, any> = new Map()
-    bumpers = new Container()
+    bumpers = new Container<Bumper>()
 
     constructor() {
         super()
@@ -1163,7 +1421,7 @@ class Panel extends BaseNode {
         style: {fontSize: 120, stroke: {color: colors.sea2, width: 20}},
     })
     marker_price_cash = create_text({
-        text: `$${update_cash.price}`,
+        text: `$${update_cash.price} (1)`,
         style: {fontSize: 120, stroke: {color: colors.sea2, width: 20}},
     })
     button_speed = new Button('+speed')
@@ -1182,9 +1440,9 @@ class Panel extends BaseNode {
 
 
         this.button_bumper.on('pointerdown', () => {
-            if (coins < update_bumper.price) return
+            if (coins.amount < update_bumper.price) return
             if (!this.merge_panel.hasFree()) return
-            coins -= update_bumper.price
+            coins.sub(update_bumper.price)
 
             update_bumper.level += 1
             update_bumper.price = bumper_prices[update_bumper.level]
@@ -1218,27 +1476,64 @@ class Panel extends BaseNode {
             this.merge_panel.set_random_free(bumper)
 
             stats_bumpers.push(bumper)
+
+            const fx = create_fx('merge', bumper.parent?.toGlobal(bumper))
+            fx.scale.set(random_float(7, 8))
         })
 
+        window.spawn_bumper = (level: any, mode: any) => {
+
+            const bumper = new Bumper(level, mode)
+            this.merge_panel.set_random_free(bumper)
+
+            stats_bumpers.push(bumper)
+
+            const fx = create_fx('merge', bumper.parent?.toGlobal(bumper))
+            fx.scale.set(random_float(7, 8))
+        }
+
         this.button_speed.on('pointerdown', () => {
-            if (coins < update_speed.price) return
-            coins -= update_speed.price
+            if (coins.amount < update_speed.price) return
+            coins.sub(update_speed.price)
 
             update_speed.level += 1
             update_speed.price += ((x) => 212 * Math.exp(0.676 * x))(update_speed.level)
             update_speed.price = Math.floor(update_speed.price)
             this.trigger('increase_speed')
-            this.marker_price_speed.text = `${update_speed.price}`
+            this.marker_price_speed.text = `$${update_speed.price} (${update_speed.level-1})`
         })
 
         this.button_cash.on('pointerdown', () => {
-            if (coins < update_cash.price) return
-            coins -= update_cash.price
+            if (coins.amount < update_cash.price) return
+            coins.sub(update_cash.price)
 
             update_cash.level += 1
             update_cash.price += ((x) => 235 * Math.exp(0.431 * x))(update_cash.level)
             update_cash.price = Math.floor(update_cash.price)
-            this.marker_price_cash.text = `${update_cash.price}`
+            this.marker_price_cash.text = `${update_cash.price} (${2 * (update_cash.level - 1)})`
+        })
+
+        coins.on('change', ({prev, value}) => {
+            if (value < update_bumper.price && !this.button_bumper.locked) {
+                this.button_bumper.anim_locked()
+            } else if (value >= update_bumper.price && this.button_bumper.locked) {
+
+                this.button_bumper.anim_unlocked()
+            }
+
+            if (value < update_cash.price && !this.button_cash.locked) {
+                this.button_cash.anim_locked()
+            } else if (value >= update_cash.price && this.button_cash.locked) {
+
+                this.button_cash.anim_unlocked()
+            }
+
+            if (value < update_speed.price && !this.button_speed.locked) {
+                this.button_speed.anim_locked()
+            } else if (value >= update_speed.price && this.button_speed.locked) {
+
+                this.button_speed.anim_unlocked()
+            }
         })
     }
 
@@ -1325,6 +1620,7 @@ export default class S_Room extends BaseNode {
     pole = new Pole()
     panel = new Panel()
     _unload!: OmitThisParameter<any>
+    button_pause = new Button('=')
 
     constructor() {
         super()
@@ -1334,11 +1630,15 @@ export default class S_Room extends BaseNode {
         this.addChild(this.pole)
         this.addChild(this.marker_score)
         this.addChild(this.panel)
+        this.addChild(this.button_pause)
         PhysicsEngine.recreate()
 
+        coins.on('change', () => {
+            this.marker_score.text = coins.amount
+        })
+
         this.on('add_coins', (amount) => {
-            coins += amount
-            this.marker_score.text = coins
+            coins.add(amount)
         })
 
         this.on('increase_speed', () => {
@@ -1347,6 +1647,9 @@ export default class S_Room extends BaseNode {
             this.pole.loop.time -= 100
         })
 
+        this.set_timeout(50, () => {
+            coins.set(10000000)
+        })
     }
 
     start() {
@@ -1368,9 +1671,20 @@ export default class S_Room extends BaseNode {
         super.resize()
         const {width, height} = window.screen_size
 
-        this.position.set(-width * 0.5, -height * 0.5)
-        this.bw = width
-        this.bh = height
+        // this.position.set(-width * 0.5, -height * 0.5)
+        // this.position.set(0)
+        if (height > width) {
+            this.bh = height
+            this.bw = Math.min(width, height * (9/16))
+            this.position.y = -height * 0.5
+            this.position.x = -this.bw / 2
+        } else {
+            this.bh = height
+            this.bw = Math.min(width, height * (9/20))
+            this.position.y = -height * 0.5
+            this.position.x = -this.bw / 2
+        }
+
 
         this.bg.bh = this.bh
         this.bg.bw = 0
@@ -1382,16 +1696,26 @@ export default class S_Room extends BaseNode {
         h_const(this.pole, this.bh * 0.6)
         this.pole.position.x = (this.bw - this.pole.bw) * 0.5 // center on X
         this.pole.position.y = 10
-        this.pole.resize()
 
 
         w_const(this.panel, this.bw * 0.9)
-        h_const(this.panel, this.bh * 0.37)
+        h_const(this.panel, this.panel.bw / 1.3)
+
+        h_const(this.pole, this.bh - this.panel.bh -50)
+        this.pole.resize()
+
         this.panel.position.x = (this.bw - this.pole.bw) * 0.5 // center on X
         this.panel.position.y = this.pole.position.y + this.pole.bh + 20 // bottom from pole
         this.panel.resize()
 
         this.marker_score.position.x = this.bw * 0.5
         this.marker_score.position.y = 50
+
+        this.button_pause.bw=70
+        this.button_pause.bh=70
+        this.button_pause.resize()
+        this.button_pause.position.x = this.bw - 40
+        this.button_pause.position.y = 40
+        this.button_pause.marker.rotation = Math.PI / 2
     }
 }

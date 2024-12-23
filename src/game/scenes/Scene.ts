@@ -10,7 +10,6 @@ class BtnSwitch extends BaseNode {
 
     constructor() {
         super()
-        this.addChild(this.bg)
     }
 }
 
