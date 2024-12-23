@@ -70,14 +70,14 @@ const init = async () => {
         if (width <= 0) width = 1
         if (height <= 0) height = 1
 
-        const maxAspectRatio = 20 / 9
-        if (width / height > maxAspectRatio) {
-            width = height * maxAspectRatio
-        } else if (height / width > maxAspectRatio) {
-            height = width * maxAspectRatio
-        }
-
-        const screenScale = Math.min(width / 960.0, height / 960.0)
+        // const maxAspectRatio = 20 / 9
+        // if (width / height > maxAspectRatio) {
+        //     width = height * maxAspectRatio
+        // } else if (height / width > maxAspectRatio) {
+        //     height = width * maxAspectRatio
+        // }
+        //
+        // const screenScale = Math.min(width / 960.0, height / 960.0)
 
         window.screen_size = {
             width: width,
@@ -99,7 +99,7 @@ const init = async () => {
             scene_main = new Scene()
         }
 
-        scene_main.onResize(width / screenScale, height / screenScale)
+        scene_main.onResize(1,1)
     }
 
     document.querySelector<HTMLDivElement>('#canvas-box')!.appendChild(app.canvas)

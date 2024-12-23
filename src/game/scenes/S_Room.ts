@@ -34,6 +34,7 @@ import AssetManager from '$lib/AssetManager'
 import make_draggable from '$lib/make_draggable'
 import {detect_circle_intersection, mapRange, shorten_num} from '$src/game/utility'
 import {IPoint} from '$lib/Vector'
+import microManage from '$lib/dev/microManage'
 
 class Value extends EventEmitter {
     amount: number
@@ -159,6 +160,7 @@ type EmitterConfigs = 'star' | 'dust' | 'trail' | 'flare'
 let pole!: Pole
 
 const fixers: Fixer[] = []
+const fixers_bought: number[] = [6, 3]
 const fixers_disable = () => {
     for (const fixer of fixers) {
         fixer.anim_end()
@@ -398,6 +400,13 @@ class FixerLocker extends BaseNode {
             }
         })
 
+        if (coins.amount >= this.price && !this.unlocked) {
+            this.unlocked = true
+            this.interactive = true
+            this.cursor = 'pointer'
+            this.box.filters = []
+        }
+
         this.on('pointerup', () => {
             this.trigger('buy_fixer', this.price)
         })
@@ -481,7 +490,7 @@ class Fixer extends BaseNode {
 
         fixers.push(this)
 
-        if (![6, 3].includes(this.id)) {
+        if (!fixers_bought.includes(this.id)) {
             this.locker.setPrice(fixer_prices[this.id])
             this.locker.visible = true
             this.owned = true
@@ -503,10 +512,12 @@ class Fixer extends BaseNode {
             const fx = create_fx('buy_fixer', this.parent?.toGlobal(this))
             fx.animationSpeed = 0.4
             fx.scale.set(6)
+            fixers_bought.push(this.id)
         })
     }
 
     anim_start() {
+        // rotation + particle animation
         if (this.locked) return
         this.anim.startIfNot(true)
         this.emitter.emit = true
@@ -517,6 +528,7 @@ class Fixer extends BaseNode {
     }
 
     anim_end() {
+        // rotation + particle animation
         this.anim.stop()
         this.emitter.emit = false
         const need = Math.ceil(this.bg.rotation / Math.PI) - (this.bg.rotation / Math.PI)
@@ -607,7 +619,7 @@ class Bumper extends NodePhysics {
 
         let prev_parent: any
         const prev_position = new_point()
-        this.on('dragstart', (event) => {
+        this.on('sdragstart', (event) => {
             event.stopPropagation()
             prev_parent = this.parent
             prev_position.copyFrom(this)
@@ -621,12 +633,12 @@ class Bumper extends NodePhysics {
                 .start()
             this.mouse_field.circle(0, 0, 500).fill('white')
         })
-        this.on('dragmove', (event) => {
+        this.on('sdragmove', (event) => {
             event.stopPropagation()
             const point = this.parent.toLocal(event.global)
             this.set_position(point)
         })
-        this.on('dragend', (event) => {
+        this.on('sdragend', (event) => {
             this.mouse_field.clear()
 
             this.tween(this.selected)
@@ -864,7 +876,7 @@ class BackgroundPole extends BaseNode {
             height: this.bh,
         })
 
-        const stroke = 30
+        const stroke = 15
         const border_mask = graphics()
             .roundRect(0, 0, this.bw - stroke * 2, this.bh - stroke * 2, 40)
             .stroke({color: 0xffffff, alignment: 0, width: stroke, join: 'round', alpha: 0.5})
@@ -898,7 +910,7 @@ class ForegroundPole extends BaseNode {
             height: this.bh,
         })
 
-        const stroke2 = 20
+        const stroke2 = 10
         const border2_mask = graphics()
             .roundRect(0, 0, this.bw - stroke2 * 2, this.bh - stroke2 * 2, 40)
             .stroke({color: 0xffffff, alignment: 0, width: stroke2, join: 'round', alpha: 0.5})
@@ -913,7 +925,7 @@ class ForegroundPole extends BaseNode {
 
         const score_w = this.bw / 2
         const score = graphics()
-            .roundRect(-score_w / 2, -30, score_w, 90, 40)
+            .roundRect(-score_w / 2, -30, score_w, 45, 40)
             .fill(0)
         score.position.x = this.bw / 2
         score.position.y = 30
@@ -1119,6 +1131,7 @@ class Pole extends BaseNode {
         // places
         fixers.length = 0
         this.fixers.children.forEach(el => el.destroy())
+        this.fixers.children.length = 0
 
         const place1 = new Fixer(1)
         place1.position.x = this.bw * 0.5
@@ -1613,10 +1626,14 @@ class Background extends BaseNode {
 
 }
 
+class ContainerAspectRatio extends BaseNode {
+
+}
+
 
 export default class S_Room extends BaseNode {
     bg = new Background()
-    marker_score = create_text({text: '$12356', style: {fontSize: 50, stroke: {color: colors.sea3, width: 20}}})
+    marker_score = create_text({text: '$12356', style: {fontSize: 25, stroke: {color: colors.sea3, width: 10}}})
     pole = new Pole()
     panel = new Panel()
     _unload!: OmitThisParameter<any>
@@ -1669,47 +1686,42 @@ export default class S_Room extends BaseNode {
 
     resize() {
         super.resize()
-        const {width, height} = window.screen_size
+        const {width, height} = {width: 600, height: 900}
+        const s_width = window.screen_size.width
+        const s_height = window.screen_size.height
+        window.room = this
 
-        // this.position.set(-width * 0.5, -height * 0.5)
-        // this.position.set(0)
-        if (height > width) {
-            this.bh = height
-            this.bw = Math.min(width, height * (9/16))
-            this.position.y = -height * 0.5
-            this.position.x = -this.bw / 2
+        const target_aspect_ratio = (9/20)
+
+        this.bh = height
+        this.bw = Math.min(width, height * target_aspect_ratio)
+
+        if (s_width / s_height < target_aspect_ratio) {
+            this.scale.set(s_width / this.bw)
         } else {
-            this.bh = height
-            this.bw = Math.min(width, height * (9/20))
-            this.position.y = -height * 0.5
-            this.position.x = -this.bw / 2
+            this.scale.set(s_height / this.bh)
         }
 
+        this.position.x = -this.bw/2 * this.scale.x
+        this.position.y = -this.bh/2 * this.scale.y
 
-        this.bg.bh = this.bh
-        this.bg.bw = 0
-        this.bg.resize()
-        this.bg.position.x = -385
-
-
-        w_const(this.pole, this.bw * 0.9)
-        h_const(this.pole, this.bh * 0.6)
+        w_const(this.pole, this.bw * 0.95)
+        // h_const(this.pole, this.bh * 0.70)
         this.pole.position.x = (this.bw - this.pole.bw) * 0.5 // center on X
-        this.pole.position.y = 10
+        this.pole.position.y = 5
 
-
-        w_const(this.panel, this.bw * 0.9)
+        w_const(this.panel, this.bw * 0.95)
         h_const(this.panel, this.panel.bw / 1.3)
 
-        h_const(this.pole, this.bh - this.panel.bh -50)
+        h_const(this.pole, this.bh - this.panel.bh -20)
         this.pole.resize()
 
         this.panel.position.x = (this.bw - this.pole.bw) * 0.5 // center on X
-        this.panel.position.y = this.pole.position.y + this.pole.bh + 20 // bottom from pole
+        this.panel.position.y = this.pole.position.y + this.pole.bh + 10 // bottom from pole
         this.panel.resize()
 
         this.marker_score.position.x = this.bw * 0.5
-        this.marker_score.position.y = 50
+        this.marker_score.position.y = 25
 
         this.button_pause.bw=70
         this.button_pause.bh=70
