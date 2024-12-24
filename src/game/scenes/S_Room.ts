@@ -13,7 +13,7 @@ import {
 } from 'pixi.js'
 import {create_sprite, create_text, graphics, new_point} from '$lib/create_things'
 import {h_const, w_const} from '$lib/resize'
-import {random_float, random_int} from '$lib/random'
+import {random_choice, random_float, random_int} from '$lib/random'
 import Loop from '$lib/Loop'
 import {NodePhysics, PhysicsEngine} from '$src/game/components/PhysicsEngine'
 import registerKeypress from '$lib/dev/registerKeypress'
@@ -80,20 +80,7 @@ class Value extends EventEmitter {
 }
 
 const coins = new Value(0)
-const update_speed = {
-    price: 30,
-    level: 1,
-}
 
-const update_cash = {
-    price: 30,
-    level: 1,
-}
-
-const update_bumper = {
-    price: 1,
-    level: 1,
-}
 
 const stats_bumpers: Bumper[] = []
 
@@ -160,7 +147,7 @@ type EmitterConfigs = 'star' | 'dust' | 'trail' | 'flare'
 let pole!: Pole
 
 const fixers: Fixer[] = []
-const fixers_bought: number[] = [6, 3]
+const fixers_bought: number[] = [5, 2]
 const fixers_disable = () => {
     for (const fixer of fixers) {
         fixer.anim_end()
@@ -177,10 +164,10 @@ const merge_cells: MergeCell[] = []
 let merge_panel!: MergePanel
 
 const fixer_prices: any = {
-    2: 100,
-    4: 2500,
-    5: 15000,
-    1: 80000,
+    1: 100,
+    3: 2500,
+    4: 15000,
+    0: 80000,
 }
 
 const create_fx = (name: string, pos_global: IPoint) => {
@@ -201,16 +188,17 @@ const create_fx = (name: string, pos_global: IPoint) => {
     return sprite
 }
 
+const TARGET_SCREEN = {width: 600, height: 900}
 
 class Ball extends NodePhysics {
     color = graphics().circle(0, 0, 70).fill({color: '#ec9f9f', alpha: 1})
     bg = create_sprite('ball')
-    level = Math.max(2 ** (update_cash.level - 1), 1)
+    level = update_cash.value()
     marker: Text
     container = new Container()
-    emitter: Emitter
+    // emitter: Emitter
     emitter_current: EmitterConfigs = 'trail'
-    shape = Bodies.circle(0, 0, 30, {
+    shape = Bodies.circle(0, 0, 15, {
         restitution: 0.9,
         friction: 0.33,
         collisionFilter: {
@@ -220,9 +208,9 @@ class Ball extends NodePhysics {
         slop: 0.01,
     })
     counted = false
-    flicker = create_sprite('particle')
+    // flicker = create_sprite('particle')
 
-    update
+    // update
 
     constructor(bonus?: string) {
         super()
@@ -234,51 +222,51 @@ class Ball extends NodePhysics {
         this.container.addChild(this.bg)
         this.container.addChild(this.color)
         this.container.addChild(this.marker)
-        this.container.scale.set(0.5)
+        this.container.scale.set(30 / this.bg.width)
         this.color.blendMode = 'multiply'
 
-        this.emitter = new Emitter(particles_container, upgradeConfig(emitter_configs.trail, [Texture.from('particle')]))
-        this.emitter.emit = false
-        this.update = (() => {
-            this.emitter.spawnPos.copyFrom(this.position)
-            this.emitter.update(0.01)
-        })
+        // this.emitter = new Emitter(particles_container, upgradeConfig(emitter_configs.trail, [Texture.from('particle')]))
+        // this.emitter.emit = false
+        // this.update = (() => {
+        //     this.emitter.spawnPos.copyFrom(this.position)
+        //     this.emitter.update(0.01)
+        // })
 
         PhysicsEngine.add(this, this.shape)
         this.set_value()
 
-        if (bonus) {
+        // if (bonus) {
+        //
+        //     this.marker.alpha = 0
+        //     this.counted = true
+        //     this.addChild(this.flicker)
+        //     this.flicker.scale.set(2)
+        //     this.tween(this.flicker)
+        //         .to({alpha: 0}, 155)
+        //         .easing(Easing.Sinusoidal.InOut)
+        //         .repeat(Infinity)
+        //         .yoyo(true)
+        //         .start()
+        //     this.bg.scale.set(2.5)
+        //
+        //     this.cursor = 'pointer'
+        // }
 
-            this.marker.alpha = 0
-            this.counted = true
-            this.addChild(this.flicker)
-            this.flicker.scale.set(2)
-            this.tween(this.flicker)
-                .to({alpha: 0}, 155)
-                .easing(Easing.Sinusoidal.InOut)
-                .repeat(Infinity)
-                .yoyo(true)
-                .start()
-            this.bg.scale.set(2.5)
-
-            this.cursor = 'pointer'
-        }
-
-        if (bonus === 'super') {
-            const t = Texture.from('ball_super')
-            this.bg.texture = t
-            this.set_emitter('trail')
-        } else if (bonus === 'mega') {
-
-            const t = Texture.from('ball_mega')
-            this.bg.texture = t
-            this.set_emitter('dust')
-        } else if (bonus === 'bomb') {
-
-            const t = Texture.from('ball_bomb')
-            this.bg.texture = t
-            this.set_emitter('star')
-        }
+        // if (bonus === 'super') {
+        //     const t = Texture.from('ball_super')
+        //     this.bg.texture = t
+        //     this.set_emitter('trail')
+        // } else if (bonus === 'mega') {
+        //
+        //     const t = Texture.from('ball_mega')
+        //     this.bg.texture = t
+        //     this.set_emitter('dust')
+        // } else if (bonus === 'bomb') {
+        //
+        //     const t = Texture.from('ball_bomb')
+        //     this.bg.texture = t
+        //     this.set_emitter('star')
+        // }
     }
 
     upgrade(value: number, mode = 'add') {
@@ -312,27 +300,27 @@ class Ball extends NodePhysics {
         // }
     }
 
-    destroy(options?: DestroyOptions) {
-        this.emitter.destroy()
-        window.app.ticker.remove(this.update)
-        super.destroy(options);
-    }
-
-    set_emitter(name?: EmitterConfigs) {
-        if (name === undefined) {
-            this.emitter.emit = false
-            window.app.ticker.remove(this.update)
-            return
-        }
-        if (this.emitter_current === name && this.emitter.emit) return
-        if (!this.emitter.emit) {
-            window.app.ticker.add(this.update)
-            this.emitter.emit = true
-        }
-        this.emitter_current = name
-        this.emitter.init(upgradeConfig(emitter_configs[name], [Texture.from('particle')]))
-        this.emitter.spawnPos.copyFrom(this.position)
-    }
+    // destroy(options?: DestroyOptions) {
+    //     this.emitter.destroy()
+    //     window.app.ticker.remove(this.update)
+    //     super.destroy(options);
+    // }
+    //
+    // set_emitter(name?: EmitterConfigs) {
+    //     if (name === undefined) {
+    //         this.emitter.emit = false
+    //         window.app.ticker.remove(this.update)
+    //         return
+    //     }
+    //     if (this.emitter_current === name && this.emitter.emit) return
+    //     if (!this.emitter.emit) {
+    //         window.app.ticker.add(this.update)
+    //         this.emitter.emit = true
+    //     }
+    //     this.emitter_current = name
+    //     this.emitter.init(upgradeConfig(emitter_configs[name], [Texture.from('particle')]))
+    //     this.emitter.spawnPos.copyFrom(this.position)
+    // }
 }
 
 class FixerLocker extends BaseNode {
@@ -380,7 +368,7 @@ class FixerLocker extends BaseNode {
         // this.spin.play()
         this.spin.animationSpeed = 0.6
         this.spin.anchor.set(0.5)
-        this.spin.scale.set(4)
+        this.spin.scale.set(2)
         this.addChild(this.spin)
         this.spin.visible = false
         this.spin.loop = false
@@ -511,9 +499,12 @@ class Fixer extends BaseNode {
             })
             const fx = create_fx('buy_fixer', this.parent?.toGlobal(this))
             fx.animationSpeed = 0.4
-            fx.scale.set(6)
+            fx.scale.set(2)
             fixers_bought.push(this.id)
         })
+
+        this.bg.scale.set(0.5)
+        this.locker.scale.set(0.5)
     }
 
     anim_start() {
@@ -551,17 +542,16 @@ class Fixer extends BaseNode {
     }
 
     resize() {
-
     }
 }
 
 class Bumper extends NodePhysics {
     bg = Sprite.from('')
     selected = new Container()
-    shape = Bodies.circle(0, 0, 60, {restitution: 10.93, isStatic: true, label: 'bumper'})
+    shape = Bodies.circle(0, 0, 33, {restitution: 10.93, isStatic: true, label: 'bumper'})
     marker = create_text({
         text: '',
-        style: {fontSize: 70, fontFamily: 'bubblebody', stroke: {color: colors.add1, width: 10}},
+        style: {fontSize: 50, fontFamily: 'bubblebody', stroke: {color: colors.add1, width: 3}},
     })
     level = 1
     id = -1
@@ -576,14 +566,13 @@ class Bumper extends NodePhysics {
         super()
         this.level = level
 
+        this.scale.set(0.8)
+
         this.bg.anchor.set(0.5)
-        this.bg.scale.set(0.5)
+        this.bg.scale.set(70 / 230)
 
         const p1 = create_sprite('particle')
-        p1.scale.set(3.4)
-        const p2 = create_sprite('particle_dark')
-        p2.scale.set(3.5)
-        // this.selected.addChild(p2)
+        p1.scale.set(90 / p1.width)
         this.selected.addChild(p1)
 
         this.addChild(this.selected)
@@ -619,7 +608,7 @@ class Bumper extends NodePhysics {
 
         let prev_parent: any
         const prev_position = new_point()
-        this.on('sdragstart', (event) => {
+        this.on('dragstart', (event) => {
             event.stopPropagation()
             prev_parent = this.parent
             prev_position.copyFrom(this)
@@ -632,13 +621,14 @@ class Bumper extends NodePhysics {
                 .to({alpha: 1}, 50)
                 .start()
             this.mouse_field.circle(0, 0, 500).fill('white')
+            this.scale.set(1.1)
         })
-        this.on('sdragmove', (event) => {
+        this.on('dragmove', (event) => {
             event.stopPropagation()
             const point = this.parent.toLocal(event.global)
             this.set_position(point)
         })
-        this.on('sdragend', (event) => {
+        this.on('dragend', (event) => {
             this.mouse_field.clear()
 
             this.tween(this.selected)
@@ -662,8 +652,9 @@ class Bumper extends NodePhysics {
             for (const fixer of pole.fixers.children) {
                 if (fixer.owned) continue
                 const pos = fixer.parent?.toGlobal(fixer.position)
-                const has_intersection = detect_circle_intersection(global, 80, pos, 40)
+                const has_intersection = detect_circle_intersection(global, 40, pos, 20)
                 if (has_intersection) {
+                    this.scale.set(1)
                     end()
                     pole.bumpers.addChild(this)
                     this.set_position(fixer)
@@ -677,7 +668,7 @@ class Bumper extends NodePhysics {
             for (const bumper of bumpers) {
                 if (bumper === this) continue
                 const pos = bumper.parent?.toGlobal(bumper.position)
-                const has_intersection = detect_circle_intersection(global, 30, pos, 30)
+                const has_intersection = detect_circle_intersection(global, 15, pos, 15)
                 if (has_intersection) {
                     if (bumper.level === this.level && bumper.type === this.type) {
                         end()
@@ -704,6 +695,15 @@ class Bumper extends NodePhysics {
                         merge_panel.bumpers.children.forEach(el => {
                             el.shape.isSensor = true
                         })
+
+                        this.scale.set(bumper.scale.x)
+                        if (prev_parent.slug && prev_parent.slug.includes('BumpersOnMergeField')) {
+                            bumper.shape.isSensor = true
+                            bumper.scale.set(0.8)
+                        } else {
+                            bumper.shape.isSensor = false
+                            bumper.scale.set(1)
+                        }
                     }
                     return
                 }
@@ -714,11 +714,12 @@ class Bumper extends NodePhysics {
                 const pos = mc.parent?.toGlobal(mc.position)
                 pos.x += mc.bw / 4
                 pos.y += mc.bh / 4
-                const has_intersection = detect_circle_intersection(global, 10, pos, 40)
+                const has_intersection = detect_circle_intersection(global, 10, pos, 20)
                 if (has_intersection) {
                     end()
                     merge_panel.set_to(mc.ix, mc.iy, this)
                     this.shape.isSensor = true
+                    this.scale.set(0.8)
                     return
                 }
             }
@@ -728,6 +729,11 @@ class Bumper extends NodePhysics {
                 prev_parent.addChild(this)
                 this.set_position(prev_position)
                 this.shape.isSensor = false
+                this.scale.set(1)
+                if (prev_parent.slug && prev_parent.slug.includes('BumpersOnMergeField')) {
+                    this.shape.isSensor = true
+                    this.scale.set(0.8)
+                }
             }
 
         })
@@ -780,18 +786,16 @@ class Bumper extends NodePhysics {
     }
 
     upgrade() {
-
         if (!bumper_values[this.type][this.level + 1]) return
 
         this.level += 1
         this.draw()
         const fx = create_fx('merge', this.parent?.toGlobal(this))
-        fx.scale.set(7, 8)
+        fx.scale.set(random_float(4, 4.5))
         fx.alpha = 0.6
     }
 
     destroy(options?: DestroyOptions) {
-        console.log('b4', bumpers.length)
         bumpers = bumpers.filter(el => el.slug !== this.slug)
         super.destroy(options);
     }
@@ -799,7 +803,7 @@ class Bumper extends NodePhysics {
     anim_bounce() {
         if (this.isAnim) return
         this.isAnim = true
-        const prev = this.bg.scale.x
+        const prev = 70 / 230
         this.tween(this.bg)
             .to({scale: {x: prev - 0.05, y: prev - 0.05}}, 10)
             .easing(Easing.Quartic.Out)
@@ -811,7 +815,7 @@ class Bumper extends NodePhysics {
                 .start()
         })
 
-        this.set_timeout(50, () => {
+        this.set_timeout(70, () => {
             this.isAnim = false
             this.bg.scale.set(prev)
         })
@@ -835,8 +839,8 @@ class Wall extends NodePhysics {
 
 class BackgroundPole extends BaseNode {
     bg = new Background()
-    mask = graphics().roundRect(0, 0, 100, 100, 6).fill({color: 0xffffff, alpha: 1})
-    overlay = graphics().roundRect(0, 0, 100, 100, 6).fill({color: '#806330', alpha: 0.2})
+    mask = graphics().roundRect(0, 0, 100, 100, 12).fill({color: 0xffffff, alpha: 1})
+    overlay = graphics().roundRect(0, 0, 100, 100, 12).fill({color: '#806330', alpha: 0.2})
     border?: TilingSprite
     mask_container = new Container()
 
@@ -851,7 +855,7 @@ class BackgroundPole extends BaseNode {
     }
 
     resize() {
-        const {height} = window.screen_size
+        const {height} = TARGET_SCREEN
 
         this.bg.bh = height
         this.bg.bw = 0
@@ -937,7 +941,7 @@ class ForegroundPole extends BaseNode {
 class Pole extends BaseNode {
     bg = new BackgroundPole()
     fg = new ForegroundPole()
-    balls_mask = graphics().roundRect(0, 0, 100, 100, 7).fill({color: 0xffffff, alpha: 1})
+    balls_mask = graphics().roundRect(0, 0, 100, 100, 12).fill({color: 0xffffff, alpha: 1})
     balls = new Container<Ball>()
     fixers = new Container<Fixer>()
     bumpers = new Container<Bumper>()
@@ -956,14 +960,19 @@ class Pole extends BaseNode {
         this.addChild(this.walls)
         this.addChild(this.fg)
 
+        for (let i = 0; i < 6; i++) {
+            this.fixers.addChild(new Fixer(i))
+        }
+
         this.balls.mask = this.balls_mask
         particles_container.mask = this.balls_mask
 
         this.loop = new Loop(this, 1400, () => {
             const ball = new Ball()
-            const margin = 80
+            const margin = 30
+            const m = random_float(3, margin) * random_choice([1, -1])
             ball.set_position({
-                x: this.bw * 0.5 + random_int(-margin, margin),
+                x: this.bw * 0.5 + m,
                 y: -80,
             })
             this.balls.addChild(ball)
@@ -988,10 +997,10 @@ class Pole extends BaseNode {
                 const ball = [bodyA, bodyB].find(body => body.label !== 'bumper')
                 const bumper = [bodyA, bodyB].find(body => body.label === 'bumper')
 
-                const maxSpeed = 25
+                const maxSpeed = 17
 
                 if (ball && bumper && !bumper.isSensor) {
-                    const velocityIncrease = 2
+                    const velocityIncrease = 1.7
                     const currentVelocity = ball.velocity
 
                     let boostedVelocity = Vector.mult(currentVelocity, velocityIncrease)
@@ -1036,7 +1045,7 @@ class Pole extends BaseNode {
 
         const t = create_text({
             text: `$${shorten_num(amount)}`, style: {
-                fontSize: 40, fill: '#ffffff', fontFamily: 'bubblebody',
+                fontSize: 20, fill: '#ffffff', fontFamily: 'bubblebody',
                 // stroke: {width: 10, color: '#d11658'},
             },
         })
@@ -1044,10 +1053,15 @@ class Pole extends BaseNode {
         const scale = percent > 0.4 ? Math.min(mapRange(percent, 0.4, 10, 1, 3), 3) : 1
         t.scale.set(scale)
         t.position.copyFrom(particles_container.toLocal(pos))
+        if (t.position.x < 30) {
+            t.position.x = 30
+        } else if (t.position.x > this.bw - 30) {
+            t.position.x = this.bw - 30
+        }
         t.y = this.bh + t.height
         t.anchor.y = 1
         this.tween(t)
-            .to({y: this.bh - 50}, 250)
+            .to({y: this.bh - 25}, 250)
             .start()
 
         if (scale > 2.8) {
@@ -1129,43 +1143,19 @@ class Pole extends BaseNode {
         this.walls.addChild(wall_r, wall_l, wall_t1, wall_t2)
 
         // places
-        fixers.length = 0
-        this.fixers.children.forEach(el => el.destroy())
-        this.fixers.children.length = 0
+        const fixer_positions = [
+            [0.5, 0.4],
+            [0.25, 0.5], [0.75, 0.5],
+            [0.23, 0.8], [0.77, 0.8],
+            [0.5, 0.7],
+        ]
 
-        const place1 = new Fixer(1)
-        place1.position.x = this.bw * 0.5
-        place1.position.y = this.bh * 0.4
-        this.fixers.addChild(place1)
-
-
-        const place2 = new Fixer(2)
-        place2.position.x = this.bw * 0.25
-        place2.position.y = this.bh * 0.5
-        this.fixers.addChild(place2)
-
-
-        const place3 = new Fixer(3)
-        place3.position.x = this.bw * 0.75
-        place3.position.y = this.bh * 0.5
-        this.fixers.addChild(place3)
-
-
-        const place4 = new Fixer(4)
-        place4.position.x = this.bw * 0.15
-        place4.position.y = this.bh * 0.8
-        this.fixers.addChild(place4)
-
-
-        const place5 = new Fixer(5)
-        place5.position.x = this.bw * 0.85
-        place5.position.y = this.bh * 0.8
-        this.fixers.addChild(place5)
-
-        const place6 = new Fixer(6)
-        place6.position.x = this.bw * 0.5
-        place6.position.y = this.bh * 0.7
-        this.fixers.addChild(place6)
+        for (let i = 0; i < this.fixers.children.length; i++) {
+            const fixer = this.fixers.getChildAt(i)
+            const coords = fixer_positions[i]
+            fixer.position.x = this.bw * coords[0]
+            fixer.position.y = this.bh * coords[1]
+        }
     }
 }
 
@@ -1284,12 +1274,16 @@ class MergeCell extends BaseNode {
     }
 }
 
+class BumpersOnMergeField extends BaseNode {
+
+}
+
 
 class MergePanel extends BaseNode {
     cells = new Container<MergeCell>()
     map: Map<number, any> = new Map()
     map_cells: Map<number, any> = new Map()
-    bumpers = new Container<Bumper>()
+    bumpers = new BumpersOnMergeField()
 
     constructor() {
         super()
@@ -1343,7 +1337,7 @@ class MergePanel extends BaseNode {
     set_to(ix: number, iy: number, child: any) {
         const cell = this._get(ix, iy)
         this.bumpers.addChild(child)
-        child.set_position({x: cell.bw * 0.5 - 8 + cell.x, y: cell.bh * 0.5 - 8 + cell.y})
+        child.set_position({x: cell.bw * 0.5 - 3 + cell.x, y: cell.bh * 0.5 - 3 + cell.y})
         cell.isFree = false
         child.cell_id = {ix, iy}
     }
@@ -1354,7 +1348,7 @@ class MergePanel extends BaseNode {
                 const cell = this._get(ix, iy)
                 if (cell.isFree) {
                     this.bumpers.addChild(child)
-                    child.set_position({x: cell.bw * 0.5 - 8 + cell.x, y: cell.bh * 0.5 - 8 + cell.y})
+                    child.set_position({x: cell.bw * 0.5 - 3 + cell.x, y: cell.bh * 0.5 - 3 + cell.y})
                     cell.isFree = false
                     child.cell_id = {ix, iy}
                     return
@@ -1420,6 +1414,102 @@ class BackgroundPanel extends BaseNode {
     }
 }
 
+
+class UpdateBumper {
+    level = 0
+
+    get price() {
+        if (this.level === 0) return 1
+        if (this.level === 1) return 3
+        if (this.level === 2) return 6
+        const x = this.level - 1
+        const v =
+            0.00136 * Math.pow(x, 3) +
+            0.22315 * Math.pow(x, 2) +
+            8.40176 * x -
+            8.42673
+        return Math.ceil(v)
+    }
+}
+
+const update_bumper = new UpdateBumper()
+
+class UpdateCash {
+    level = 0
+
+    get price() {
+        if (this.level === 0) return 1
+        if (this.level === 1) return 3
+        if (this.level === 2) return 6
+        const x = this.level - 1
+        const v =
+            0.00136 * Math.pow(x, 3) +
+            0.22315 * Math.pow(x, 2) +
+            8.40176 * x -
+            8.42673
+        return Math.ceil(v)
+    }
+
+    value(level = 0) {
+        level += this.level
+
+        if (level === 0) return 1
+
+        return 2 * (level)
+    }
+}
+
+const update_cash = new UpdateCash()
+
+
+class UpdateSpeed {
+    private level = 0
+
+    upgrade() {
+        if (this.isMax) return
+        this.level += 1
+    }
+
+    get isMax() {
+        return this.value() === this.value(1)
+    }
+
+    get price() {
+        if (this.level === 0) return 1
+        if (this.level === 1) return 3
+        if (this.level === 2) return 6
+        const x = this.level - 1
+        const v =
+            0.00136 * Math.pow(x, 3) +
+            0.22315 * Math.pow(x, 2) +
+            8.40176 * x -
+            8.42673
+        return Math.ceil(v)
+    }
+
+    value(level = 0) {
+        level += this.level
+        let value = 1400
+
+        for (let i = 0; i < level; i++) {
+            if (i < 5) value -= 100
+            else if (i < 16) value -= 50
+            else if (i < 25) value -= 25
+            else if (i < 35) value -= 5
+        }
+
+        return value
+    }
+
+    value_pretty(level=0) {
+        const value = this.value(level)
+        return value/1000 + ' s'
+    }
+}
+
+const update_speed = new UpdateSpeed()
+
+
 class Panel extends BaseNode {
     bg = new BackgroundPanel()
     merge_panel = new MergePanel()
@@ -1427,16 +1517,26 @@ class Panel extends BaseNode {
     button_bumper = new Button('+bumper')
     marker_price_bumper = create_text({
         text: `$${update_bumper.price}`,
-        style: {fontSize: 120, stroke: {color: colors.sea2, width: 20}},
+        style: {fontSize: 80, stroke: {color: colors.sea2, width: 20}},
     })
     marker_price_speed = create_text({
         text: `$${update_speed.price}`,
         style: {fontSize: 120, stroke: {color: colors.sea2, width: 20}},
     })
     marker_price_cash = create_text({
-        text: `$${update_cash.price} (1)`,
+        text: `$${update_cash.price}`,
         style: {fontSize: 120, stroke: {color: colors.sea2, width: 20}},
     })
+
+    marker_stats_speed = create_text({
+        text: `${update_speed.value_pretty()} > ${update_speed.value_pretty(1)}`,
+        style: {fontSize: 120, stroke: {color: colors.sea2, width: 20}},
+    })
+    marker_stats_cash = create_text({
+        text: `${update_cash.value()} > ${update_cash.value(1)}`,
+        style: {fontSize: 120, stroke: {color: colors.sea2, width: 20}},
+    })
+
     button_speed = new Button('+speed')
     button_cash = new Button('+cash')
 
@@ -1451,6 +1551,8 @@ class Panel extends BaseNode {
         this.addChild(this.marker_price_speed)
         this.addChild(this.marker_price_cash)
 
+        this.addChild(this.marker_stats_speed)
+        this.addChild(this.marker_stats_cash)
 
         this.button_bumper.on('pointerdown', () => {
             if (coins.amount < update_bumper.price) return
@@ -1458,9 +1560,6 @@ class Panel extends BaseNode {
             coins.sub(update_bumper.price)
 
             update_bumper.level += 1
-            update_bumper.price = bumper_prices[update_bumper.level]
-
-            update_bumper.price = Math.floor(update_bumper.price)
             this.marker_price_bumper.text = `$${update_bumper.price}`
 
             const mode = random_float() < 0.05 ? 'multiply' : 'add'
@@ -1491,7 +1590,8 @@ class Panel extends BaseNode {
             stats_bumpers.push(bumper)
 
             const fx = create_fx('merge', bumper.parent?.toGlobal(bumper))
-            fx.scale.set(random_float(7, 8))
+            fx.scale.set(random_float(4, 4.5))
+            fx.alpha = 0.6
         })
 
         window.spawn_bumper = (level: any, mode: any) => {
@@ -1509,11 +1609,15 @@ class Panel extends BaseNode {
             if (coins.amount < update_speed.price) return
             coins.sub(update_speed.price)
 
-            update_speed.level += 1
-            update_speed.price += ((x) => 212 * Math.exp(0.676 * x))(update_speed.level)
-            update_speed.price = Math.floor(update_speed.price)
+            update_speed.upgrade()
             this.trigger('increase_speed')
-            this.marker_price_speed.text = `$${update_speed.price} (${update_speed.level-1})`
+            this.marker_price_speed.text = `$${update_speed.price}`
+            this.marker_stats_speed.text = `${update_speed.value_pretty()} > ${update_speed.value_pretty(1)}`
+
+            if (update_speed.isMax) {
+                this.button_speed.anim_locked()
+                this.button_speed.interactive = false
+            }
         })
 
         this.button_cash.on('pointerdown', () => {
@@ -1521,9 +1625,8 @@ class Panel extends BaseNode {
             coins.sub(update_cash.price)
 
             update_cash.level += 1
-            update_cash.price += ((x) => 235 * Math.exp(0.431 * x))(update_cash.level)
-            update_cash.price = Math.floor(update_cash.price)
-            this.marker_price_cash.text = `${update_cash.price} (${2 * (update_cash.level - 1)})`
+            this.marker_price_cash.text = `$${update_cash.price}`
+            this.marker_stats_cash.text = `${update_cash.value()} > ${update_cash.value(1)}`
         })
 
         coins.on('change', ({prev, value}) => {
@@ -1543,8 +1646,7 @@ class Panel extends BaseNode {
 
             if (value < update_speed.price && !this.button_speed.locked) {
                 this.button_speed.anim_locked()
-            } else if (value >= update_speed.price && this.button_speed.locked) {
-
+            } else if (value >= update_speed.price && this.button_speed.locked && !update_speed.isMax) {
                 this.button_speed.anim_unlocked()
             }
         })
@@ -1560,41 +1662,55 @@ class Panel extends BaseNode {
         w_const(this.merge_panel, this.bw * 0.9)
         h_const(this.merge_panel, this.merge_panel.bw * (2 / 5))
         this.merge_panel.position.x = (this.bw - this.merge_panel.bw) * 0.5 // center on X
-        this.merge_panel.position.y = 20
+        this.merge_panel.position.y = 5
         this.merge_panel.resize()
 
-        this.button_bumper.bh = 100
-        this.button_bumper.bw = 370
+        this.button_bumper.bh = 50
+        this.button_bumper.bw = 180
         this.button_bumper.resize()
         this.button_bumper.position.x = this.bw * 0.5
-        this.button_bumper.position.y = this.merge_panel.bh + this.merge_panel.y + 50 + 10
+        this.button_bumper.position.y = this.merge_panel.bh + this.merge_panel.y + 25
 
-        this.button_speed.bh = 80
-        this.button_speed.bw = 260
+        this.button_speed.bh = 30
+        this.button_speed.bw = 120
         this.button_speed.resize()
         this.button_speed.position.x = this.bw * 0.8
-        this.button_speed.position.y = this.button_bumper.position.y + 120
+        this.button_speed.position.y = this.button_bumper.position.y + 50
 
-        this.button_cash.bh = 80
-        this.button_cash.bw = 260
+        this.button_cash.bh = 30
+        this.button_cash.bw = 120
         this.button_cash.resize()
         this.button_cash.position.x = this.bw * 0.2
-        this.button_cash.position.y = this.button_bumper.position.y + 120
+        this.button_cash.position.y = this.button_bumper.position.y + 50
 
         const marker_pb_height = this.marker_price_bumper.height / this.marker_price_bumper.scale.y
-        this.marker_price_bumper.scale.set(60 / marker_pb_height)
+        this.marker_price_bumper.scale.set(40 / marker_pb_height)
         this.marker_price_bumper.x = this.bw * 0.5
-        this.marker_price_bumper.y = this.button_bumper.y + 50 + 20
+        this.marker_price_bumper.y = this.button_bumper.y + 40
 
         const marker_ps_height = this.marker_price_speed.height / this.marker_price_speed.scale.y
-        this.marker_price_speed.scale.set(60 / marker_ps_height)
+        this.marker_price_speed.scale.set(30 / marker_ps_height)
         this.marker_price_speed.x = this.button_speed.x
-        this.marker_price_speed.y = this.button_speed.y + 40 + 20
+        this.marker_price_speed.y = this.button_speed.y + 30
 
         const marker_pc_height = this.marker_price_cash.height / this.marker_price_cash.scale.y
-        this.marker_price_cash.scale.set(60 / marker_pc_height)
+        this.marker_price_cash.scale.set(30 / marker_pc_height)
         this.marker_price_cash.x = this.button_cash.x
-        this.marker_price_cash.y = this.button_cash.y + 40 + 20
+        this.marker_price_cash.y = this.button_cash.y + 30
+
+
+        const marker_ss_height = this.marker_stats_speed.height / this.marker_stats_speed.scale.y
+        this.marker_stats_speed.scale.set(20 / marker_ss_height)
+        this.marker_stats_speed.x = this.marker_price_speed.x
+        this.marker_stats_speed.y = this.marker_price_speed.y + 25
+        this.marker_stats_speed.alpha = 0.7
+
+        const marker_sc_height = this.marker_stats_cash.height / this.marker_stats_cash.scale.y
+        this.marker_stats_cash.scale.set(20 / marker_sc_height)
+        this.marker_stats_cash.x = this.marker_price_cash.x
+        this.marker_stats_cash.y = this.marker_price_cash.y + 25
+        this.marker_stats_cash.alpha = 0.7
+
     }
 }
 
@@ -1627,28 +1743,16 @@ class Background extends BaseNode {
 }
 
 class ContainerAspectRatio extends BaseNode {
-
-}
-
-
-export default class S_Room extends BaseNode {
-    bg = new Background()
     marker_score = create_text({text: '$12356', style: {fontSize: 25, stroke: {color: colors.sea3, width: 10}}})
     pole = new Pole()
     panel = new Panel()
-    _unload!: OmitThisParameter<any>
-    button_pause = new Button('=')
 
     constructor() {
         super()
-        room = this
         pole = this.pole
-        this.addChild(this.bg)
         this.addChild(this.pole)
         this.addChild(this.marker_score)
         this.addChild(this.panel)
-        this.addChild(this.button_pause)
-        PhysicsEngine.recreate()
 
         coins.on('change', () => {
             this.marker_score.text = coins.amount
@@ -1664,34 +1768,17 @@ export default class S_Room extends BaseNode {
             this.pole.loop.time -= 100
         })
 
-        this.set_timeout(50, () => {
-            coins.set(10000000)
-        })
-    }
-
-    start() {
-        this._unload = this.update.bind(this)
-        window.app.ticker.add(this._unload)
-    }
-
-    update(ticker: Ticker) {
-        PhysicsEngine.update()
-        this.pole.update()
-    }
-
-    destroy(options?: DestroyOptions) {
-        window.app.ticker.remove(this._unload)
-        super.destroy(options)
+        // this.set_timeout(50, () => {
+        //     coins.set(10000000)
+        // })
     }
 
     resize() {
-        super.resize()
-        const {width, height} = {width: 600, height: 900}
+        const {width, height} = TARGET_SCREEN
         const s_width = window.screen_size.width
         const s_height = window.screen_size.height
-        window.room = this
 
-        const target_aspect_ratio = (9/20)
+        const target_aspect_ratio = (9 / 20)
 
         this.bh = height
         this.bw = Math.min(width, height * target_aspect_ratio)
@@ -1702,8 +1789,8 @@ export default class S_Room extends BaseNode {
             this.scale.set(s_height / this.bh)
         }
 
-        this.position.x = -this.bw/2 * this.scale.x
-        this.position.y = -this.bh/2 * this.scale.y
+        this.position.x = -this.bw / 2 * this.scale.x
+        this.position.y = -this.bh / 2 * this.scale.y
 
         w_const(this.pole, this.bw * 0.95)
         // h_const(this.pole, this.bh * 0.70)
@@ -1713,7 +1800,7 @@ export default class S_Room extends BaseNode {
         w_const(this.panel, this.bw * 0.95)
         h_const(this.panel, this.panel.bw / 1.3)
 
-        h_const(this.pole, this.bh - this.panel.bh -20)
+        h_const(this.pole, this.bh - this.panel.bh - 20)
         this.pole.resize()
 
         this.panel.position.x = (this.bw - this.pole.bw) * 0.5 // center on X
@@ -1722,12 +1809,67 @@ export default class S_Room extends BaseNode {
 
         this.marker_score.position.x = this.bw * 0.5
         this.marker_score.position.y = 25
+    }
+}
 
-        this.button_pause.bw=70
-        this.button_pause.bh=70
+
+export default class S_Room extends BaseNode {
+    bg = new Background()
+    aspect_ratio = new ContainerAspectRatio()
+    _unload!: OmitThisParameter<any>
+    button_pause = new Button('=')
+
+    constructor() {
+        super()
+        room = this
+        this.addChild(this.bg)
+        this.addChild(this.aspect_ratio)
+        this.addChild(this.button_pause)
+        PhysicsEngine.recreate()
+    }
+
+    start() {
+        this._unload = this.update.bind(this)
+        window.app.ticker.add(this._unload)
+    }
+
+    update(ticker: Ticker) {
+        PhysicsEngine.update()
+        this.aspect_ratio.pole.update()
+    }
+
+    destroy(options?: DestroyOptions) {
+        window.app.ticker.remove(this._unload)
+        super.destroy(options)
+    }
+
+    resize() {
+        super.resize()
+        this.bw = window.screen_size.width
+        this.bh = window.screen_size.height
+
+        if (this.bh > this.bw) {
+            this.bg.bh = this.bh
+            this.bg.bw = 0
+            this.bg.resize()
+        } else {
+            this.bg.bh = 0
+            this.bg.bw = this.bw
+            this.bg.resize()
+        }
+
+        this.bg.position.x = -this.bw / 2
+        this.bg.position.y = -this.bh / 2
+
+        this.aspect_ratio.resize()
+
+        const scale_btn = this.bh / TARGET_SCREEN.height
+        const btn_size = 70 * scale_btn
+        this.button_pause.bw = btn_size
+        this.button_pause.bh = btn_size
         this.button_pause.resize()
-        this.button_pause.position.x = this.bw - 40
-        this.button_pause.position.y = 40
+        this.button_pause.position.x = this.bw / 2 - (btn_size / 2) - 10
+        this.button_pause.position.y = -this.bh / 2 + (btn_size / 2) + 10
         this.button_pause.marker.rotation = Math.PI / 2
     }
 }
