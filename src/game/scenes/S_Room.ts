@@ -32,55 +32,17 @@ import {
 import {Easing} from '@tweenjs/tween.js'
 import AssetManager from '$lib/AssetManager'
 import make_draggable from '$lib/make_draggable'
-import {detect_circle_intersection, mapRange, shorten_num} from '$src/game/utility'
+import {detect_circle_intersection, mapRange, randomPointInCircle, pretty_n} from '$src/game/utility'
 import {IPoint} from '$lib/Vector'
 import microManage from '$lib/dev/microManage'
+import {renderToTexture} from '$lib/utility'
+import AudioManager from '$lib/AudioManager'
+import {TARGET_SCREEN} from '$lib/utility'
+import Value from '$lib/Value'
+import {settings} from '$src/game/logica/data'
 
-class Value extends EventEmitter {
-    amount: number
-
-    constructor(amount: number) {
-        super()
-        this.amount = amount
-    }
-
-    set(amount: number) {
-        const prev = this.amount
-        this.amount = amount
-        this.amount = Math.floor(this.amount)
-        this.emit('change', {
-            prev,
-            value: this.amount,
-        })
-    }
-
-    mul(amount: number) {
-        const prev = this.amount
-        this.amount *= amount
-        this.amount = Math.floor(this.amount)
-        this.emit('change', {
-            prev,
-            value: this.amount,
-        })
-    }
-
-    add(amount: number) {
-        const prev = this.amount
-        this.amount += amount
-        this.amount = Math.floor(this.amount)
-        this.emit('change', {
-            prev,
-            value: this.amount,
-        })
-    }
-
-    sub(amount: number) {
-        this.add(-amount)
-    }
-}
 
 const coins = new Value(0)
-
 
 const stats_bumpers: Bumper[] = []
 
@@ -164,8 +126,8 @@ const merge_cells: MergeCell[] = []
 let merge_panel!: MergePanel
 
 const fixer_prices: any = {
-    1: 100,
-    3: 2500,
+    3: 100,
+    1: 2500,
     4: 15000,
     0: 80000,
 }
@@ -174,7 +136,7 @@ const create_fx = (name: string, pos_global: IPoint) => {
     const pos = room.toLocal(pos_global)
     const textures = AssetManager.get(name)
     const sprite = new AnimatedSprite(textures)
-    sprite.texture.baseTexture.scaleMode = 'nearest'
+    sprite.texture.source.scaleMode = 'nearest'
     sprite.loop = false
     sprite.position.copyFrom(pos)
     room.addChild(sprite)
@@ -188,7 +150,6 @@ const create_fx = (name: string, pos_global: IPoint) => {
     return sprite
 }
 
-const TARGET_SCREEN = {width: 600, height: 900}
 
 class Ball extends NodePhysics {
     color = graphics().circle(0, 0, 70).fill({color: '#ec9f9f', alpha: 1})
@@ -279,7 +240,7 @@ class Ball extends NodePhysics {
         this.level = Math.floor(this.level)
         const level = this.level
 
-        this.marker.text = shorten_num(level)
+        this.marker.text = pretty_n(level)
 
         const min = find_x(1)
         const y = find_x(this.level)
@@ -326,12 +287,13 @@ class Ball extends NodePhysics {
 class FixerLocker extends BaseNode {
     box = new Container()
     bg = new Container()
-    marker = create_text({text: '$1000', style: {fontSize: 30, stroke: {color: colors.sea1, width: 10}}})
+    marker = create_text({text: '', style: {fontSize: 30, stroke: {color: colors.sea1, width: 10}}})
     lock = create_sprite('lock')
+
+    bg_bw = new Container()
 
     bg_mask !: Graphics
     private spin: AnimatedSprite
-    private blackWhite: ColorMatrixFilter
     private unlocked: boolean = false
     price = 0
 
@@ -344,6 +306,14 @@ class FixerLocker extends BaseNode {
             this.bg.pivot.x = t.width * 2.5
             this.bg.pivot.y = t.height / 2
         }
+        for (let i = 0; i < 5; i++) {
+            const t = Sprite.from('tile_metal_bw')
+            this.bg_bw.addChild(t)
+            t.position.x = i * t.width
+            this.bg_bw.pivot.x = t.width * 2.5
+            this.bg_bw.pivot.y = t.height / 2
+        }
+        this.bg_bw.alpha = 0
         this.bh = 80
         this.bw = 140
         this.bg_mask = graphics()
@@ -352,23 +322,22 @@ class FixerLocker extends BaseNode {
 
         this.addChild(this.box)
         this.box.addChild(this.bg)
+        this.box.addChild(this.bg_bw)
         this.box.addChild(this.bg_mask)
         this.box.addChild(this.marker)
         this.box.addChild(this.lock)
+        this.bg_bw.mask = this.bg_mask
         this.bg.mask = this.bg_mask
         this.marker.position.y = 10
         this.lock.scale.set(0.2)
         this.lock.position.y = -30
 
-        this.blackWhite = new ColorMatrixFilter()
-        this.blackWhite.blackAndWhite(false)
-        this.box.filters = [this.blackWhite]
-
         this.spin = new AnimatedSprite(AssetManager.get('spin'))
+        this.spin.texture.source.scaleMode = 'nearest'
         // this.spin.play()
         this.spin.animationSpeed = 0.6
         this.spin.anchor.set(0.5)
-        this.spin.scale.set(2)
+        this.spin.scale.set(6)
         this.addChild(this.spin)
         this.spin.visible = false
         this.spin.loop = false
@@ -388,28 +357,32 @@ class FixerLocker extends BaseNode {
             }
         })
 
-        if (coins.amount >= this.price && !this.unlocked) {
-            this.unlocked = true
-            this.interactive = true
-            this.cursor = 'pointer'
-            this.box.filters = []
-        }
-
         this.on('pointerup', () => {
             this.trigger('buy_fixer', this.price)
         })
+        this.lock.texture = Texture.from('lock_bw')
+        this.bg_bw.alpha = 1
     }
 
     setPrice(value: number) {
         this.price = value
         this.marker.text = `$${value}`
+
+        if (coins.amount >= this.price && !this.unlocked) {
+            this.unlocked = true
+            this.interactive = true
+            this.cursor = 'pointer'
+            this.lock.texture = Texture.from('lock')
+            this.bg_bw.alpha = 0
+        }
     }
 
     anim_unlock() {
         this.spin.visible = true
         this.spin.play()
         this.set_timeout(100, () => {
-            this.box.filters = []
+            this.lock.texture = Texture.from('lock')
+            this.bg_bw.alpha = 0
         })
         this.unlocked = true
         this.interactive = true
@@ -420,7 +393,8 @@ class FixerLocker extends BaseNode {
         this.spin.visible = true
         this.spin.play()
         this.set_timeout(100, () => {
-            this.box.filters = [this.blackWhite]
+            this.lock.texture = Texture.from('lock_bw')
+            this.bg_bw.alpha = 1
         })
         this.unlocked = false
         this.interactive = false
@@ -669,6 +643,7 @@ class Bumper extends NodePhysics {
                 if (bumper === this) continue
                 const pos = bumper.parent?.toGlobal(bumper.position)
                 const has_intersection = detect_circle_intersection(global, 15, pos, 15)
+                if (bumper.level === 13) continue
                 if (has_intersection) {
                     if (bumper.level === this.level && bumper.type === this.type) {
                         end()
@@ -714,7 +689,7 @@ class Bumper extends NodePhysics {
                 const pos = mc.parent?.toGlobal(mc.position)
                 pos.x += mc.bw / 4
                 pos.y += mc.bh / 4
-                const has_intersection = detect_circle_intersection(global, 10, pos, 20)
+                const has_intersection = detect_circle_intersection(global, 10, pos, 30)
                 if (has_intersection) {
                     end()
                     merge_panel.set_to(mc.ix, mc.iy, this)
@@ -774,12 +749,27 @@ class Bumper extends NodePhysics {
             this.marker.style.stroke = {color: this.type === 'add' ? colors.add1 : colors.multiply1, width: 10}
         }
 
-        if (this.level > 8) {
+        if (this.level === 13) {
+            this.anim_float.stop()
+            const loop = new Loop(this, 400, () => {
+                const pos = randomPointInCircle({x:0,y:0}, 10)
+                this.tween(this.marker)
+                    .to(pos, 300)
+                    .easing(Easing.Quartic.InOut)
+                    .start()
+            })
+            loop.start()
+        } else if (this.level === 12) {
+            this.anim_float.stop()
+            this.anim_float.easing(Easing.Linear.InOut)
+            this.anim_float.to({value: 100}, 50000)
+            this.anim_float.start()
+        } else if (this.level > 8) {
             this.anim_float.stop()
             this.anim_float.to({value: 1}, 5000)
             this.anim_float.start()
         }
-        if (this.level > 3) {
+        if (this.level > 3 && ![13].includes(this.level)) {
             this.anim_float.start()
         }
 
@@ -787,6 +777,7 @@ class Bumper extends NodePhysics {
 
     upgrade() {
         if (!bumper_values[this.type][this.level + 1]) return
+        AudioManager.playSound('sounds/merge',0.5, random_float(0.9, 1.1))
 
         this.level += 1
         this.draw()
@@ -850,7 +841,7 @@ class BackgroundPole extends BaseNode {
         this.addChild(this.bg)
         this.addChild(this.mask)
         this.addChild(this.overlay)
-        this.bg.filters = [new BlurFilter({strength: 4})]
+        // this.bg.filters = [new BlurFilter({strength: 4})]
         this.bg.mask = this.mask
     }
 
@@ -968,6 +959,7 @@ class Pole extends BaseNode {
         particles_container.mask = this.balls_mask
 
         this.loop = new Loop(this, 1400, () => {
+            if (settings.isPaused.amount) return
             const ball = new Ball()
             const margin = 30
             const m = random_float(3, margin) * random_choice([1, -1])
@@ -997,9 +989,10 @@ class Pole extends BaseNode {
                 const ball = [bodyA, bodyB].find(body => body.label !== 'bumper')
                 const bumper = [bodyA, bodyB].find(body => body.label === 'bumper')
 
-                const maxSpeed = 17
+                const maxSpeed = 13
 
-                if (ball && bumper && !bumper.isSensor) {
+                if (ball && bumper) {
+                    if (bumper.isSensor) return
                     const velocityIncrease = 1.7
                     const currentVelocity = ball.velocity
 
@@ -1016,7 +1009,11 @@ class Pole extends BaseNode {
                         boostedVelocity = Vector.mult(boostedVelocity, scale);
                     }
                     Body.setVelocity(ball, boostedVelocity)
+                    AudioManager.playSound('sounds/hit_bumper', 0.2, random_float(0.9, 1.1))
+                } else {
+                    AudioManager.playSound('sounds/hit_wall',0.5, random_float(1, 1.1))
                 }
+
             })
         })
 
@@ -1030,6 +1027,7 @@ class Pole extends BaseNode {
                 ball.counted = true
                 this.fx_score(ball.level, ball.parent?.toGlobal(ball))
                 last_20.push(ball.level)
+                AudioManager.playSound('sounds/cash', 0.6, random_float(0.9, 1.1))
             }
             if (ball.position.y >= this.bh + 1000) {
                 ball.destroy()
@@ -1044,7 +1042,7 @@ class Pole extends BaseNode {
         const percent = amount - last_avg > 50 ? amount / last_avg : 0.1
 
         const t = create_text({
-            text: `$${shorten_num(amount)}`, style: {
+            text: `$${pretty_n(amount)}`, style: {
                 fontSize: 20, fill: '#ffffff', fontFamily: 'bubblebody',
                 // stroke: {width: 10, color: '#d11658'},
             },
@@ -1161,12 +1159,14 @@ class Pole extends BaseNode {
 
 class Button extends BaseNode {
     bg = new Container()
+    bg_disabled = new Container()
     bg_h_initial = 1
     bg_mask !: Graphics
-    shadow !: Graphics
+    bg_mask_disabled !: Graphics
+    shadow!: Graphics
     marker: Text
-    locked: boolean
-    private blackWhite: ColorMatrixFilter
+    locked: boolean = false
+    with_shadow = true
 
     constructor(text: string) {
         super()
@@ -1180,9 +1180,18 @@ class Button extends BaseNode {
             this.bg_h_initial = t.height
         }
 
+        for (let i = 0; i < 5; i++) {
+            const t = Sprite.from('tile_metal_bw')
+            this.bg_disabled.addChild(t)
+            t.position.x = i * t.width
+            this.bg_disabled.pivot.x = t.width * 2.5
+            this.bg_disabled.pivot.y = t.height / 2
+        }
+
         this.marker = create_text({text, style: {fontSize: 130, stroke: {color: colors.sea1, width: 30}}})
         this.marker.anchor.y = 0.65
         this.addChild(this.bg)
+        this.addChild(this.bg_disabled)
         this.addChild(this.marker)
 
         this.interactive = true
@@ -1190,32 +1199,45 @@ class Button extends BaseNode {
 
         this.on('pointerdown', () => {
             if (this.locked) return
-            this.scale.set(0.9)
-            this.shadow.alpha = 0
+            // this.scale.set(0.8)
+            if (this.with_shadow) this.shadow.alpha = 0
+            // this.resize()
+            this.tween(this)
+                .to({scale:{x:0.8,y:0.8}}, 100)
+                .easing(Easing.Quartic.Out)
+                .start()
         })
 
         this.on('pointerup', () => {
-            this.scale.set(1)
-            this.shadow.alpha = 1
+            // this.scale.set(1)
+            if (this.with_shadow) this.shadow.alpha = 1
+            // this.resize()
+            this.tween(this)
+                .to({scale:{x:1,y:1}}, 100)
+                .easing(Easing.Quartic.Out)
+                .start()
         })
         this.on('pointerupoutside', () => {
             this.scale.set(1)
-            this.shadow.alpha = 1
+            if (this.with_shadow) this.shadow.alpha = 1
         })
 
 
-        this.blackWhite = new ColorMatrixFilter()
-        this.blackWhite.blackAndWhite(false)
+        this.bg_disabled.alpha = 0
     }
 
     anim_locked() {
         this.locked = true
-        this.filters = [this.blackWhite]
+        this.tween(this.bg_disabled)
+            .to({alpha: 1}, 50)
+            .start()
     }
 
     anim_unlocked() {
         this.locked = false
-        this.filters = []
+        this.tween(this.bg_disabled)
+            .to({alpha: 0}, 50)
+            .start()
     }
 
     resize() {
@@ -1224,33 +1246,43 @@ class Button extends BaseNode {
         this.bg.scale.set(
             this.bh / this.bg_h_initial,
         )
+        this.bg_disabled.scale.set(
+            this.bh / this.bg_h_initial,
+        )
 
         if (this.bg_mask) this.bg_mask.destroy()
+        if (this.bg_mask_disabled) this.bg_mask_disabled.destroy()
 
         this.bg_mask = graphics()
             .roundRect(-this.bw / 2, -this.bh / 2, this.bw, this.bh, 35)
             .fill(0)
+        this.bg_mask_disabled = graphics()
+            .roundRect(-this.bw / 2, -this.bh / 2, this.bw, this.bh, 35)
+            .fill(0)
 
-        this.addChild(this.bg_mask)
         this.bg.mask = this.bg_mask
+        this.bg_disabled.mask = this.bg_mask_disabled
+        this.addChild(this.bg_mask)
+        this.addChild(this.bg_mask_disabled)
 
         const marker_height = this.marker.height / this.marker.scale.y
 
         this.marker.scale.set((this.bh * 0.8) / marker_height)
 
-        if (this.shadow) this.shadow.destroy()
-        this.shadow = graphics()
-            .roundRect(-this.bw / 2, -this.bh / 2, this.bw, this.bh, 35)
-            .fill({color: 0, alpha: 0.2})
+        if (this.with_shadow) {
+            if (this.shadow) this.shadow.destroy()
+            this.shadow = graphics()
+                .roundRect(-this.bw / 2, -this.bh / 2, this.bw, this.bh, 35)
+                .fill({color: 0, alpha: 0.2})
 
-        this.shadow.filters = [new BlurFilter({strength: 4})]
-        this.shadow.position.set(10, 10)
+            // this.shadow.filters = [new BlurFilter({strength: 4})]
+            this.shadow.position.set(3, 3)
 
-        this.addChildAt(this.shadow, 0)
+            this.addChildAt(this.shadow, 0)
+        }
 
     }
 }
-
 
 class MergeCell extends BaseNode {
     bg = create_sprite('merge_cell')
@@ -1275,9 +1307,11 @@ class MergeCell extends BaseNode {
 }
 
 class BumpersOnMergeField extends BaseNode {
-
+    constructor() {
+        super()
+        this.slug = 'BumpersOnMergeField'
+    }
 }
-
 
 class MergePanel extends BaseNode {
     cells = new Container<MergeCell>()
@@ -1445,7 +1479,7 @@ class UpdateCash {
         const v =
             0.00136 * Math.pow(x, 3) +
             0.22315 * Math.pow(x, 2) +
-            8.40176 * x -
+            8.22176 * x -
             8.42673
         return Math.ceil(v)
     }
@@ -1460,6 +1494,9 @@ class UpdateCash {
 }
 
 const update_cash = new UpdateCash()
+const update_next = {
+    price: 1000000
+}
 
 
 class UpdateSpeed {
@@ -1475,13 +1512,11 @@ class UpdateSpeed {
     }
 
     get price() {
-        if (this.level === 0) return 1
-        if (this.level === 1) return 3
-        if (this.level === 2) return 6
-        const x = this.level - 1
+        const x = this.level + 2
         const v =
-            0.00136 * Math.pow(x, 3) +
-            0.22315 * Math.pow(x, 2) +
+            1.89888 * Math.pow(x, 4) +
+            1.80136 * Math.pow(x, 3) +
+            2.22315 * Math.pow(x, 2) +
             8.40176 * x -
             8.42673
         return Math.ceil(v)
@@ -1493,22 +1528,27 @@ class UpdateSpeed {
 
         for (let i = 0; i < level; i++) {
             if (i < 5) value -= 100
-            else if (i < 16) value -= 50
-            else if (i < 25) value -= 25
-            else if (i < 35) value -= 5
+            else if (i < 10) value -= 50
+            else if (i < 13) value -= 25
+            else if (i < 25) value -= 5
         }
 
         return value
     }
 
-    value_pretty(level=0) {
+    value_pretty(level = 0) {
         const value = this.value(level)
-        return value/1000 + ' s'
+        return value / 1000 + ' s'
     }
 }
 
+
 const update_speed = new UpdateSpeed()
 
+// for (let i =0;i<100;i++){
+//     console.log(i, update_speed.price,update_speed.value())
+//     update_speed.upgrade()
+// }
 
 class Panel extends BaseNode {
     bg = new BackgroundPanel()
@@ -1539,14 +1579,22 @@ class Panel extends BaseNode {
 
     button_speed = new Button('+speed')
     button_cash = new Button('+cash')
+    button_next = new Button('next >')
+    marker_price_next = create_text({
+        text: `$1.000.000`,
+        style: {fontSize: 120, stroke: {color: colors.sea2, width: 20}},
+    })
 
     constructor() {
         super()
+
         this.addChild(this.bg)
         this.addChild(this.merge_panel)
         this.addChild(this.button_bumper)
         this.addChild(this.button_speed)
         this.addChild(this.button_cash)
+        this.addChild(this.button_next)
+        this.addChild(this.marker_price_next)
         this.addChild(this.marker_price_bumper)
         this.addChild(this.marker_price_speed)
         this.addChild(this.marker_price_cash)
@@ -1557,12 +1605,13 @@ class Panel extends BaseNode {
         this.button_bumper.on('pointerdown', () => {
             if (coins.amount < update_bumper.price) return
             if (!this.merge_panel.hasFree()) return
+            AudioManager.playSound('sounds/buy')
             coins.sub(update_bumper.price)
 
             update_bumper.level += 1
-            this.marker_price_bumper.text = `$${update_bumper.price}`
+            this.marker_price_bumper.text = `$${pretty_n(update_bumper.price)}`
 
-            const mode = random_float() < 0.05 ? 'multiply' : 'add'
+            const mode = [4, 19, 44, 67, 92, 144, 145, 178].includes(update_bumper.level) ? 'multiply' : 'add'
             const bumpers_of_this_mode = stats_bumpers
                 .filter(el => !el.destroyed)
                 .filter(el => el.type === mode)
@@ -1607,11 +1656,12 @@ class Panel extends BaseNode {
 
         this.button_speed.on('pointerdown', () => {
             if (coins.amount < update_speed.price) return
+            AudioManager.playSound('sounds/buy')
             coins.sub(update_speed.price)
 
             update_speed.upgrade()
             this.trigger('increase_speed')
-            this.marker_price_speed.text = `$${update_speed.price}`
+            this.marker_price_speed.text = `$${pretty_n(update_speed.price)}`
             this.marker_stats_speed.text = `${update_speed.value_pretty()} > ${update_speed.value_pretty(1)}`
 
             if (update_speed.isMax) {
@@ -1622,10 +1672,11 @@ class Panel extends BaseNode {
 
         this.button_cash.on('pointerdown', () => {
             if (coins.amount < update_cash.price) return
+            AudioManager.playSound('sounds/buy')
             coins.sub(update_cash.price)
 
             update_cash.level += 1
-            this.marker_price_cash.text = `$${update_cash.price}`
+            this.marker_price_cash.text = `$${pretty_n(update_cash.price)}`
             this.marker_stats_cash.text = `${update_cash.value()} > ${update_cash.value(1)}`
         })
 
@@ -1646,8 +1697,15 @@ class Panel extends BaseNode {
 
             if (value < update_speed.price && !this.button_speed.locked) {
                 this.button_speed.anim_locked()
-            } else if (value >= update_speed.price && this.button_speed.locked && !update_speed.isMax) {
-                this.button_speed.anim_unlocked()
+            } else if (value >= update_speed.price && this.button_speed.locked) {
+                if (!update_speed.isMax) this.button_speed.anim_unlocked()
+            }
+
+
+            if (value < update_next.price && !this.button_next.locked) {
+                this.button_next.anim_locked()
+            } else if (value >= update_next.price && this.button_next.locked) {
+                this.button_next.anim_unlocked()
             }
         })
     }
@@ -1665,7 +1723,7 @@ class Panel extends BaseNode {
         this.merge_panel.position.y = 5
         this.merge_panel.resize()
 
-        this.button_bumper.bh = 50
+        this.button_bumper.bh = 45
         this.button_bumper.bw = 180
         this.button_bumper.resize()
         this.button_bumper.position.x = this.bw * 0.5
@@ -1711,6 +1769,20 @@ class Panel extends BaseNode {
         this.marker_stats_cash.y = this.marker_price_cash.y + 25
         this.marker_stats_cash.alpha = 0.7
 
+
+        this.button_next.bh = 25
+        this.button_next.bw = 100
+        this.button_next.resize()
+        this.button_next.position.x = this.bw * 0.5
+        this.button_next.position.y = this.marker_price_bumper.y + 55
+
+        const marker_pn_height = this.marker_price_next.height / this.marker_price_next.scale.y
+        this.marker_price_next.scale.set(20 / marker_pn_height)
+        this.marker_price_next.x = this.button_next.x
+        this.marker_price_next.y = this.button_next.y + 20
+        this.marker_price_next.alpha = 0.7
+
+
     }
 }
 
@@ -1743,7 +1815,10 @@ class Background extends BaseNode {
 }
 
 class ContainerAspectRatio extends BaseNode {
-    marker_score = create_text({text: '$12356', style: {fontSize: 25, stroke: {color: colors.sea3, width: 10}}})
+    marker_score = create_text({
+        text: `$${coins.amount}`,
+        style: {fontSize: 25, stroke: {color: colors.sea3, width: 10}},
+    })
     pole = new Pole()
     panel = new Panel()
 
@@ -1768,9 +1843,9 @@ class ContainerAspectRatio extends BaseNode {
             this.pole.loop.time -= 100
         })
 
-        // this.set_timeout(50, () => {
-        //     coins.set(10000000)
-        // })
+        this.set_timeout(50, () => {
+            coins.set(0)
+        })
     }
 
     resize() {
@@ -1817,14 +1892,13 @@ export default class S_Room extends BaseNode {
     bg = new Background()
     aspect_ratio = new ContainerAspectRatio()
     _unload!: OmitThisParameter<any>
-    button_pause = new Button('=')
 
     constructor() {
         super()
+        AudioManager.playMusic('sounds/music', 0.1)
         room = this
         this.addChild(this.bg)
         this.addChild(this.aspect_ratio)
-        this.addChild(this.button_pause)
         PhysicsEngine.recreate()
     }
 
@@ -1834,6 +1908,7 @@ export default class S_Room extends BaseNode {
     }
 
     update(ticker: Ticker) {
+        if (settings.isPaused.amount) return
         PhysicsEngine.update()
         this.aspect_ratio.pole.update()
     }
@@ -1862,14 +1937,5 @@ export default class S_Room extends BaseNode {
         this.bg.position.y = -this.bh / 2
 
         this.aspect_ratio.resize()
-
-        const scale_btn = this.bh / TARGET_SCREEN.height
-        const btn_size = 70 * scale_btn
-        this.button_pause.bw = btn_size
-        this.button_pause.bh = btn_size
-        this.button_pause.resize()
-        this.button_pause.position.x = this.bw / 2 - (btn_size / 2) - 10
-        this.button_pause.position.y = -this.bh / 2 + (btn_size / 2) + 10
-        this.button_pause.marker.rotation = Math.PI / 2
     }
 }

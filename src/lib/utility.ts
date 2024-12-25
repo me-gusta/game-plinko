@@ -70,3 +70,5 @@ export const renderToTexture = (() => {
         return renderTexture
     }
 })()
+
+export const TARGET_SCREEN = {width: 600, height: 900}

@@ -7,6 +7,7 @@ import DataGlobal from '$src/game/logica/DataUser'
 import {process_timers} from '$lib/time'
 import {time_groups} from '$lib/BaseNode'
 import AssetManager from '$lib/AssetManager'
+import AudioManager from '$lib/AudioManager'
 
 laod_fonts()
 
@@ -31,6 +32,14 @@ const init = async () => {
     await AssetManager.load_spritesheet('merge')
     await AssetManager.load_spritesheet('spawn')
     await AssetManager.load_spritesheet('spin')
+
+    AssetManager.set('sounds/buy', new Howl({src: '/assets/sounds/buy.mp3'}))
+    AssetManager.set('sounds/cash', new Howl({src: '/assets/sounds/cash.mp3'}))
+    AssetManager.set('sounds/cash_super', new Howl({src: '/assets/sounds/cash_super.mp3'}))
+    AssetManager.set('sounds/hit_bumper', new Howl({src: '/assets/sounds/hit_bumper.wav'}))
+    AssetManager.set('sounds/hit_wall', new Howl({src: '/assets/sounds/hit_wall.wav'}))
+    AssetManager.set('sounds/music', new Howl({src: '/assets/sounds/music.mp3'}))
+    AssetManager.set('sounds/merge', new Howl({src: '/assets/sounds/merge.mp3'}))
 
     const app = new Application()
     window.app = app

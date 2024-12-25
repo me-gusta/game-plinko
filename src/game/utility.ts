@@ -59,7 +59,7 @@ export function mapRange(value:number, inputMin:number, inputMax:number, targetM
     return targetMin + (value - inputMin) * (targetMax - targetMin) / (inputMax - inputMin);
 }
 
-export const shorten_num = (n: number) => {
+export const pretty_n = (n: number) => {
     if (n > 1000000) {
         return Math.floor(n / 100000) + 'M'
     } else if (n > 10000) {

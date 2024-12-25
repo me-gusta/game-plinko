@@ -4,6 +4,7 @@ import BaseNode from '$lib/BaseNode'
 import {graphics} from '$lib/create_things'
 import S_test_mechanics from '$src/game/scenes/S_test_mechanics'
 import S_Room from '$src/game/scenes/S_Room'
+import S_Pause from '$src/game/scenes/S_Pause'
 
 class BtnSwitch extends BaseNode {
     bg = graphics().rect(-30, -30, 60, 60).fill('white')
@@ -19,27 +20,23 @@ export default class Scene extends SceneSwitch {
         // ['plinko', S_test_mechanics],
         ['room', S_Room],
     ])
+    pause = new S_Pause()
     initial = 'room'
-    btnSwitch = new BtnSwitch()
 
     constructor() {
         super()
-        this.addChild(this.btnSwitch)
-        this.btnSwitch.zIndex = 1
 
-        this.btnSwitch.interactive = true
-        this.btnSwitch.on('pointerdown', () => {
-            if (this.current_name === 'touch') this.emit('set_scene', 'farm')
-            else if (this.current_name === 'farm') this.emit('set_scene', 'plinko')
-            else if (this.current_name === 'plinko') this.emit('set_scene', 'farm')
+        this.on('enable_pause', () => {
+            this.pause.visible = true
+
         })
+        this.addChild(this.pause)
+        this.pause.zIndex = 10
     }
 
 
     resize() {
-        const {height, width} = window.screen_size
-        this.btnSwitch.position.y = -height * 0.5 + 30
-        this.btnSwitch.position.x = width * 0.5 - 30
         super.resize();
+        this.pause.resize()
     }
 }
