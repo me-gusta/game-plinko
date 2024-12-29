@@ -21,4 +21,14 @@ const transposeObject = (obj: any[], regionKey: string): I18n => {
     return out
 }
 
-export default transposeObject(csv, 'ru')
+class Translation {
+    get i18n() {
+        if (!window.i18n_lang) throw Error('no lang set')
+        const obj = transposeObject(csv, window.i18n_lang)
+        return obj
+    }
+}
+const translation = new Translation()
+
+export default translation.i18n
+

@@ -9,15 +9,25 @@
         margin: 0;
         padding: 0;
         overflow: hidden;
+        background: url("/assets/img/bg1.webp");
       }
       #app {
         width: 100vw;
         height: 100vh;
         display: flex;
         justify-content: center;
-        background: #2e5e4c;
       }
     </style>
+    <!-- Yandex Games SDK -->
+    <script src="https://yandex.ru/games/sdk/v2"></script>
+    <script>
+      YaGames.init().then(ysdk => {
+        window.ysdk = ysdk
+        window.i18n_lang = ysdk.environment.i18n.lang
+        console.log('Yandex SDK initialized')
+        window.ysdk.features.LoadingAPI.ready()
+      })
+    </script>
   </head>
   <body>
     <div id="app">

@@ -1,33 +1,41 @@
-import {Application, Assets, TexturePool, TextureStyle} from 'pixi.js'
+import {Application, Assets} from 'pixi.js'
 import load_assets from 'virtual:assets'
-import laod_fonts from 'virtual:load-fonts'
 import Scene from '$src/game/scenes/Scene'
-import {RATIO_H_MIN, RATIO_V_MAX} from '$lib/resize'
-import DataGlobal from '$src/game/logica/DataUser'
 import {process_timers} from '$lib/time'
 import {time_groups} from '$lib/BaseNode'
 import AssetManager from '$lib/AssetManager'
+import {sleep} from '$src/game/utility'
 
-laod_fonts()
+const preload = async () => {
+    await load_assets();
+
+    // Load fonts in parallel
+    await Promise.all([
+        Assets.load({
+            alias: 'arco',
+            src: '/assets/fonts/arco.otf',
+        }),
+        Assets.load({
+            alias: 'bubblebody',
+            src: '/assets/fonts/bubblebody.ttf',
+        })
+    ]);
+
+    // Load spritesheets in parallel
+    await Promise.all([
+        AssetManager.load_spritesheet('buy_fixer'),
+        AssetManager.load_spritesheet('jackpot'),
+        AssetManager.load_spritesheet('merge'),
+        AssetManager.load_spritesheet('spawn'),
+        AssetManager.load_spritesheet('spin')
+    ]);
+
+
+}
 
 const init = async () => {
-    await load_assets()
 
-    await Assets.load({
-        alias: 'arco',
-        src: '/assets/fonts/arco.otf',
-    })
 
-    await Assets.load({
-        alias: 'bubblebody',
-        src: '/assets/fonts/bubblebody.ttf',
-    })
-
-    await AssetManager.load_spritesheet('buy_fixer')
-    await AssetManager.load_spritesheet('jackpot')
-    await AssetManager.load_spritesheet('merge')
-    await AssetManager.load_spritesheet('spawn')
-    await AssetManager.load_spritesheet('spin')
 
     AssetManager.set('sounds/buy', new Howl({src: '/assets/sounds/buy.mp3'}))
     AssetManager.set('sounds/cash', new Howl({src: '/assets/sounds/cash.mp3'}))
@@ -121,18 +129,31 @@ const init = async () => {
     })
 }
 
-window.onGPInit = async (gp) => {
-    await init()
-    await gp.player.ready
-    await gp.ads.showPreloader()
-    gp.ads.showSticky()
-    DataGlobal.install(gp)
+window.startGame = async () => {
+    // await preload()
+    // await init()
 }
-init()
+
+const wait_for_api = async () => {
+    await preload()
+    let i = 0
+    while (i < 50) {
+        if (window.ysdk)
+            return
+        await sleep(50)
+        i++
+    }
+}
+
+wait_for_api().then(async () => {
+    await init()
+})
+
 declare global {
     interface Window {
         screen_size: { width: number; height: number, ratio: number, vertical: boolean }
-        onGPInit: (gp: any) => Promise<void>
+        startGame: () => Promise<void>
         app: Application
+        ysdk: any
     }
 }

@@ -68,3 +68,8 @@ export const pretty_n = (n: number) => {
         return (n / 1000).toFixed(1) + 'k'
     } else return  n.toString()
 }
+
+
+export function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
