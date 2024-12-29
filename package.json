@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
+    "@rollup/plugin-dsv": "^3.0.5",
     "@types/howler": "^2.2.12",
     "@types/matter-js": "^0.19.8",
     "@types/node": "^22.8.5",

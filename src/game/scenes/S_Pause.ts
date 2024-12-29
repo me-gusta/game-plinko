@@ -7,6 +7,7 @@ import {Container, Graphics, Sprite, Text, Texture, TilingSprite} from 'pixi.js'
 import {Easing} from '@tweenjs/tween.js'
 import {settings} from '$src/game/logica/data'
 import microManage from '$lib/dev/microManage'
+import i18n from '$lib/i18n'
 
 let panel!: Panel
 
@@ -121,6 +122,9 @@ class Button extends BaseNode {
         const marker_height = this.marker.height / this.marker.scale.y
 
         this.marker.scale.set((this.bh * 0.8) / marker_height)
+        if (this.marker.width > this.bw) {
+            this.marker.scale.set(this.marker.scale.x*((this.bw - 20) / this.marker.width))
+        }
 
         if (this.with_shadow) {
             if (this.shadow) this.shadow.destroy()
@@ -217,11 +221,11 @@ class Range extends BaseNode {
 
 class Panel extends BaseNode {
     bg = new BackgroundPanel()
-    btn_play = new Button('play')
-    btn_settings = new Button('settings')
-    range_sound = new Range('sound')
-    range_music = new Range('music')
-    btn_back = new Button('back')
+    btn_play = new Button(i18n.play)
+    btn_settings = new Button(i18n.settings)
+    range_sound = new Range(i18n.sound)
+    range_music = new Range(i18n.music)
+    btn_back = new Button(i18n.back)
 
     constructor() {
         super()
@@ -358,6 +362,7 @@ export default class S_Pause extends BaseNode {
         this.addChild(this.ar_container)
         this.addChild(this.button_pause)
         this.overlay.interactive = true
+        this.button_pause.alpha = 0
         this.button_pause.on('pointerup', () => {
             this.overlay.visible = true
             this.ar_container.visible = true

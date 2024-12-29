@@ -18,6 +18,19 @@ export default class AudioManager {
             music.loop(true);
             if (volume) music.volume(volume * (settings.music_level.amount / 100));
         }
+
+        let lastPosition = 0
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                lastPosition = music.seek()
+                music.pause()
+            } else {
+                music.seek(lastPosition)
+                music.play()
+            }
+        }
+
+        document.addEventListener('visibilitychange', handleVisibilityChange)
     }
 
     static stopMusic(assetMusicName: string) {

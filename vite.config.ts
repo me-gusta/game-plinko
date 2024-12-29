@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import path from "path";
 import assetsPlugin from './src/lib/vite-plugins/vite-plugin-assets'
 import loadFonts from './src/lib/vite-plugins/vite-plugin-load-fonts'
-import { svelte } from '@sveltejs/vite-plugin-svelte'
+import dsv from '@rollup/plugin-dsv'
 
 export default defineConfig({
     resolve: {
@@ -12,5 +12,10 @@ export default defineConfig({
             "$assets": path.resolve(process.cwd(), "./assets"),
         },
     },
-    plugins: [assetsPlugin(), loadFonts(), svelte()],
+    plugins: [assetsPlugin(), loadFonts(), dsv()],
+    define: {
+        'process.env': {
+            I18N_KEY: 'ru'
+        }
+    }
 });

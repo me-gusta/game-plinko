@@ -1,3 +1,4 @@
+/* eslint-disable */
 import BaseNode from '$lib/BaseNode'
 import {Body, Composite, Engine, Bodies, Events, Vector} from 'matter-js'
 import {
@@ -40,15 +41,12 @@ import AudioManager from '$lib/AudioManager'
 import {TARGET_SCREEN} from '$lib/utility'
 import Value from '$lib/Value'
 import {settings} from '$src/game/logica/data'
+import i18n from '$lib/i18n'
 
 
 const coins = new Value(0)
 
 const stats_bumpers: Bumper[] = []
-
-const bumper_prices = [1, 1, 4, 17, 26, 39, 47, 60, 73, 86, 99, 111, 129, 141, 159, 176, 189, 206, 227, 244, 261, 283, 304, 321, 347, 369, 390, 416, 441, 463, 493, 519, 544, 574, 604, 634, 669, 699, 733, 767, 801, 836, 874, 913, 951, 994, 1033, 1076, 1119, 1166, 1209, 1256, 1307, 1354, 1406, 1457, 1509, 1564, 1620, 1676, 1736, 1791, 1851, 1916, 1980, 2044, 2109, 2177, 2246, 2314, 2387, 2460, 2537, 2614, 2691, 2769, 2850, 2931, 3017, 3103, 3189, 3279, 3369, 3463, 3557, 3651, 3750, 3849, 3947, 4050, 4157, 4264, 4371, 4479, 4590, 4706, 4821, 4937, 5057, 5177, 5301, 5426]
-
-const MAX_GRADIENT_POINTS = 41000
 
 const bumper_probabilities: any = {// max-level => [probs]
     1: [1000],
@@ -128,9 +126,11 @@ let merge_panel!: MergePanel
 const fixer_prices: any = {
     3: 100,
     1: 2500,
-    4: 15000,
-    0: 80000,
+    4: 85000,
+    0: 700000,
 }
+
+const map_level = new Value(1)
 
 const create_fx = (name: string, pos_global: IPoint) => {
     const pos = room.toLocal(pos_global)
@@ -752,7 +752,7 @@ class Bumper extends NodePhysics {
         if (this.level === 13) {
             this.anim_float.stop()
             const loop = new Loop(this, 400, () => {
-                const pos = randomPointInCircle({x:0,y:0}, 10)
+                const pos = randomPointInCircle({x: 0, y: 0}, 10)
                 this.tween(this.marker)
                     .to(pos, 300)
                     .easing(Easing.Quartic.InOut)
@@ -777,7 +777,7 @@ class Bumper extends NodePhysics {
 
     upgrade() {
         if (!bumper_values[this.type][this.level + 1]) return
-        AudioManager.playSound('sounds/merge',0.5, random_float(0.9, 1.1))
+        AudioManager.playSound('sounds/merge', 0.5, random_float(0.9, 1.1))
 
         this.level += 1
         this.draw()
@@ -1011,7 +1011,7 @@ class Pole extends BaseNode {
                     Body.setVelocity(ball, boostedVelocity)
                     AudioManager.playSound('sounds/hit_bumper', 0.2, random_float(0.9, 1.1))
                 } else {
-                    AudioManager.playSound('sounds/hit_wall',0.5, random_float(1, 1.1))
+                    AudioManager.playSound('sounds/hit_wall', 0.5, random_float(1, 1.1))
                 }
 
             })
@@ -1203,7 +1203,7 @@ class Button extends BaseNode {
             if (this.with_shadow) this.shadow.alpha = 0
             // this.resize()
             this.tween(this)
-                .to({scale:{x:0.8,y:0.8}}, 100)
+                .to({scale: {x: 0.8, y: 0.8}}, 100)
                 .easing(Easing.Quartic.Out)
                 .start()
         })
@@ -1213,7 +1213,7 @@ class Button extends BaseNode {
             if (this.with_shadow) this.shadow.alpha = 1
             // this.resize()
             this.tween(this)
-                .to({scale:{x:1,y:1}}, 100)
+                .to({scale: {x: 1, y: 1}}, 100)
                 .easing(Easing.Quartic.Out)
                 .start()
         })
@@ -1268,6 +1268,10 @@ class Button extends BaseNode {
         const marker_height = this.marker.height / this.marker.scale.y
 
         this.marker.scale.set((this.bh * 0.8) / marker_height)
+
+        if (this.marker.width > this.bw) {
+            this.marker.scale.set(this.marker.scale.x*((this.bw - 20) / this.marker.width))
+        }
 
         if (this.with_shadow) {
             if (this.shadow) this.shadow.destroy()
@@ -1495,12 +1499,12 @@ class UpdateCash {
 
 const update_cash = new UpdateCash()
 const update_next = {
-    price: 1000000
+    price: 1000000,
 }
 
 
 class UpdateSpeed {
-    private level = 0
+    level = 0
 
     upgrade() {
         if (this.isMax) return
@@ -1554,7 +1558,7 @@ class Panel extends BaseNode {
     bg = new BackgroundPanel()
     merge_panel = new MergePanel()
 
-    button_bumper = new Button('+bumper')
+    button_bumper = new Button('+' + i18n.bumper)
     marker_price_bumper = create_text({
         text: `$${update_bumper.price}`,
         style: {fontSize: 80, stroke: {color: colors.sea2, width: 20}},
@@ -1577,9 +1581,9 @@ class Panel extends BaseNode {
         style: {fontSize: 120, stroke: {color: colors.sea2, width: 20}},
     })
 
-    button_speed = new Button('+speed')
-    button_cash = new Button('+cash')
-    button_next = new Button('next >')
+    button_speed = new Button('+' + i18n.speed)
+    button_cash = new Button('+' + i18n.cash)
+    button_next = new Button(i18n.next + ' >')
     marker_price_next = create_text({
         text: `$1.000.000`,
         style: {fontSize: 120, stroke: {color: colors.sea2, width: 20}},
@@ -1609,7 +1613,7 @@ class Panel extends BaseNode {
             coins.sub(update_bumper.price)
 
             update_bumper.level += 1
-            this.marker_price_bumper.text = `$${pretty_n(update_bumper.price)}`
+            this.setButtonsText()
 
             const mode = [4, 19, 44, 67, 92, 144, 145, 178].includes(update_bumper.level) ? 'multiply' : 'add'
             const bumpers_of_this_mode = stats_bumpers
@@ -1661,8 +1665,7 @@ class Panel extends BaseNode {
 
             update_speed.upgrade()
             this.trigger('increase_speed')
-            this.marker_price_speed.text = `$${pretty_n(update_speed.price)}`
-            this.marker_stats_speed.text = `${update_speed.value_pretty()} > ${update_speed.value_pretty(1)}`
+            this.setButtonsText()
 
             if (update_speed.isMax) {
                 this.button_speed.anim_locked()
@@ -1676,8 +1679,50 @@ class Panel extends BaseNode {
             coins.sub(update_cash.price)
 
             update_cash.level += 1
-            this.marker_price_cash.text = `$${pretty_n(update_cash.price)}`
-            this.marker_stats_cash.text = `${update_cash.value()} > ${update_cash.value(1)}`
+            this.setButtonsText()
+        })
+
+        this.button_next.on('pointerdown', () => {
+            if (coins.amount < update_next.price) return
+            coins.set(10000200)
+            for (const bumper of bumpers) {
+                bumper.destroy()
+            }
+            fixers_bought.length = 0
+            fixers_bought.push(5, 2)
+            for (const fixer of fixers) {
+                fixer.owned = false
+                if (!fixers_bought.includes(fixer.id)) {
+                    fixer.locker.setPrice(fixer_prices[fixer.id])
+                    fixer.locker.visible = true
+                    fixer.owned = true
+                    fixer.locked = true
+                    fixer.bg.visible = false
+                    fixer.locker.alpha = 1
+                }
+            }
+
+            for (const el of pole.balls.children) {
+                el.destroy()
+            }
+
+            for (const item of merge_cells) {
+                item.isFree = true
+            }
+            bumpers.length = 0
+            pole.bumpers.children.length = 0
+            merge_panel.bumpers.children.length = 0
+            update_bumper.level = 0
+            update_speed.level = 0
+            update_cash.level = 0
+
+            room.resize()
+            this.setButtonsText()
+            map_level.add(1)
+            if (map_level.amount > 4) map_level.set(1)
+            const texture = Texture.from('bg' + map_level.amount)
+            room.bg.bg.texture = texture
+            pole.bg.bg.bg.texture = texture
         })
 
         coins.on('change', ({prev, value}) => {
@@ -1708,6 +1753,16 @@ class Panel extends BaseNode {
                 this.button_next.anim_unlocked()
             }
         })
+    }
+
+    setButtonsText() {
+        this.marker_price_speed.text = `$${pretty_n(update_speed.price)}`
+        this.marker_stats_speed.text = `${update_speed.value_pretty()} > ${update_speed.value_pretty(1)}`
+
+        this.marker_price_cash.text = `$${pretty_n(update_cash.price)}`
+        this.marker_stats_cash.text = `${update_cash.value()} > ${update_cash.value(1)}`
+
+        this.marker_price_bumper.text = `$${pretty_n(update_bumper.price)}`
     }
 
     resize() {
@@ -1787,7 +1842,7 @@ class Panel extends BaseNode {
 }
 
 class Background extends BaseNode {
-    bg = create_sprite('bg')
+    bg = create_sprite('bg' + map_level.amount)
     proportions_initial
 
     constructor() {
@@ -1939,3 +1994,67 @@ export default class S_Room extends BaseNode {
         this.aspect_ratio.resize()
     }
 }
+
+/*
+
+Button { // container with rounded corners
+    bg_idle // tiled-row background
+    bg_disabled // tiled-row background
+    marker // label scaled to fit parent rect
+}
+
+Bumper {
+    bg // image
+    marker // label
+}
+
+Fixer {
+    particles // group
+    bg // image
+}
+
+Ball {
+    bg // image
+    marker // label
+}
+
+room {
+    bg // full-height or full-width depending on resolution
+    ar { // main container with all game sized to be always of aspect ratio
+       vrow { // place child items in verticaly row, items take full width
+            pole { // take all the height available & overflow hidden
+                bg {
+                    bg // image take full screen
+                    bg_tiles // tiled bg take full parent
+                    mask // graphics
+                }
+                walls // group
+                fixers // group
+                balls // group
+                bumpers // group
+                fg {
+                    bg_tiles // tiled bg take full parent
+                    mask // graphics
+                }
+                marker_score // label with no restriction positioned absolutely
+            }
+            panel { // take fixed amount of height; have rounded corners
+                bg // tiled background taking all width and height
+                merge_panel { // 5x2 grid
+                    cell // image
+                }
+
+                button-& // Button; constant w&h; constant position
+                    bumper, speed, cash
+                marker_price-& // label; constant w; auto h; constant position
+                    bumper, speed, cash, next
+                marker_stats-& // label; constant w; auto h; constant position
+                    speed, cash
+            }
+       }
+    }
+}
+
+
+
+ */
